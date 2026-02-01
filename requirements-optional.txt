@@ -1,0 +1,32 @@
+# Optional dependencies for AITools Framework
+# Install with: pip install -r requirements-optional.txt
+
+# AI capabilities
+openai>=1.0.0
+tiktoken>=0.5.0
+
+# Web development
+flask>=2.0.0
+flask-cors>=3.0.0
+
+# PDF processing
+pypdf2>=3.0.0
+reportlab>=4.0.0
+
+# Data analysis
+pandas>=2.0.0
+numpy>=1.24.0
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Database operations
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+mysql-connector-python>=8.0.0
+
+# Development tools
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0
