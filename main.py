@@ -81,10 +81,14 @@ def load_manual_imports():
     from pdf.pdf import tools as pdf_tools
     from pdf.pdf import TOOL_CALL_MAP as pdf_tool_map
 
+    # Import markdown module
+    from markdown.markdown import tools as markdown_tools
+    from markdown.markdown import TOOL_CALL_MAP as markdown_tool_map
+
     tools = (read_tools + write_tools + delete_tools + replace_tools + 
              git_tools + bash_tools + workspace_tools + 
              network_tools + enhanced_interaction_tools +
-             database_tools + web_search_tools + stock_tools + summary_tools + project_context_tools + diagram_tools + architect_tools + pdf_tools)
+             database_tools + web_search_tools + stock_tools + summary_tools + project_context_tools + diagram_tools + architect_tools + pdf_tools + markdown_tools)
 
     # Combine all tool maps
     tool_call_maps = {}
@@ -107,6 +111,7 @@ def load_manual_imports():
     tool_call_maps.update(diagram_tool_map)
     tool_call_maps.update(architect_tool_map)  # Architect tools last
     tool_call_maps.update(pdf_tool_map)
+    tool_call_maps.update(markdown_tool_map)
     
     ui.print_warning(f"⚠️  Loaded {len(tools)} tools manually (no cache)")
     ui.print_info(f"📊 Includes {len(summary_tools)} context management tools")
