@@ -121,6 +121,7 @@ def load_manual_imports():
 TOOLS_REQUIRING_MESSAGES = [
     'enhance_summary',
     "summary_by_ai",
+    "optimize_feature_context"
 ]
 
 def execute_tool_with_messages_injection(tool_name, args, messages, tool_call_maps):
