@@ -49,27 +49,27 @@ def load_manual_imports():
     from interaction.interaction import TOOL_CALL_MAP as interaction_tool_map
 
     # Import enhanced interaction module with additional tools
-    from interaction.enhanced_interaction import tools as enhanced_interaction_tools
-    from interaction.enhanced_interaction import TOOL_CALL_MAP as enhanced_interaction_tool_map
+    # from interaction.enhanced_interaction import tools as enhanced_interaction_tools
+    # from interaction.enhanced_interaction import TOOL_CALL_MAP as enhanced_interaction_tool_map
 
     # Import database module
-    from database.database import tools as database_tools
-    from database.database import TOOL_CALL_MAP as database_tool_map
+    # from database.database import tools as database_tools
+    # from database.database import TOOL_CALL_MAP as database_tool_map
 
     # Import web_search module
-    from web_search.web_search import tools as web_search_tools
-    from web_search.web_search import TOOL_CALL_MAP as web_search_tool_map
+    # from web_search.web_search import tools as web_search_tools
+    # from web_search.web_search import TOOL_CALL_MAP as web_search_tool_map
 
     # Import stock module
-    from stock.stock import tools as stock_tools
-    from stock.stock import TOOL_CALL_MAP as stock_tool_map
+    # from stock.stock import tools as stock_tools
+    # from stock.stock import TOOL_CALL_MAP as stock_tool_map
 
     # Import summary module
     from summary.summary import tools as summary_tools
     from summary.summary import TOOL_CALL_MAP as summary_tool_map
 
-    from diagram.diagram import tools as diagram_tools
-    from diagram.diagram import TOOL_CALL_MAP as diagram_tool_map
+    # from diagram.diagram import tools as diagram_tools
+    # from diagram.diagram import TOOL_CALL_MAP as diagram_tool_map
 
     # Import project_context module
     from project_context.project_context import tools as project_context_tools
@@ -78,17 +78,22 @@ def load_manual_imports():
     from architect.architect import tools as architect_tools
     from architect.architect import TOOL_CALL_MAP as architect_tool_map
 
-    from pdf.pdf import tools as pdf_tools
-    from pdf.pdf import TOOL_CALL_MAP as pdf_tool_map
+    # from pdf.pdf import tools as pdf_tools
+    # from pdf.pdf import TOOL_CALL_MAP as pdf_tool_map
 
-    # Import markdown module
-    from markdown.markdown import tools as markdown_tools
-    from markdown.markdown import TOOL_CALL_MAP as markdown_tool_map
+    # # Import markdown module
+    # from markdown.markdown import tools as markdown_tools
+    # from markdown.markdown import TOOL_CALL_MAP as markdown_tool_map
 
+    # tools = (read_tools + write_tools + delete_tools + replace_tools + 
+    #          git_tools + bash_tools + workspace_tools + 
+    #          network_tools + enhanced_interaction_tools +
+    #          database_tools + web_search_tools + stock_tools + summary_tools + project_context_tools + diagram_tools + architect_tools + pdf_tools + markdown_tools)
+    
     tools = (read_tools + write_tools + delete_tools + replace_tools + 
              git_tools + bash_tools + workspace_tools + 
-             network_tools + enhanced_interaction_tools +
-             database_tools + web_search_tools + stock_tools + summary_tools + project_context_tools + diagram_tools + architect_tools + pdf_tools + markdown_tools)
+             network_tools +
+             summary_tools + project_context_tools + architect_tools)
 
     # Combine all tool maps
     tool_call_maps = {}
@@ -102,16 +107,16 @@ def load_manual_imports():
     # tool_call_maps.update(compress_tool_map)
     tool_call_maps.update(network_tool_map)
     # tool_call_maps.update(interaction_tool_map)
-    tool_call_maps.update(enhanced_interaction_tool_map)
-    tool_call_maps.update(database_tool_map)
-    tool_call_maps.update(web_search_tool_map)
-    tool_call_maps.update(stock_tool_map)
+    # tool_call_maps.update(enhanced_interaction_tool_map)
+    # tool_call_maps.update(database_tool_map)
+    # tool_call_maps.update(web_search_tool_map)
+    # tool_call_maps.update(stock_tool_map)
     tool_call_maps.update(summary_tool_map)
     tool_call_maps.update(project_context_tool_map)
-    tool_call_maps.update(diagram_tool_map)
+    # tool_call_maps.update(diagram_tool_map)
     tool_call_maps.update(architect_tool_map)  # Architect tools last
-    tool_call_maps.update(pdf_tool_map)
-    tool_call_maps.update(markdown_tool_map)
+    # tool_call_maps.update(pdf_tool_map)
+    # tool_call_maps.update(markdown_tool_map)
     
     ui.print_warning(f"⚠️  Loaded {len(tools)} tools manually (no cache)")
     ui.print_info(f"📊 Includes {len(summary_tools)} context management tools")
@@ -710,9 +715,10 @@ You are a software expert with access to tools for operating systems, files, net
 
 ## Core Development Principles:
 1. **Small Feature Focus**: Work on one atomic, completable feature .
-2. **Incremental Completion**: After each feature: use 'optimize_feature_context' tool to clear intermediate data, load TODO.md, and prepare for next feature.
+2. **Incremental Completion**: After each feature: use 'optimize_feature_context' tool to clear intermediate data,   load TODO.md if exist else create but need to confirm with user, and prepare for next feature.
 3. **Token Management**: Proactively use 'enhance_summary' tool to prevent token overflow (>10w tokens).
 4. **Task Tracking**: Update TODO.md and project context after each feature completion.
+5. **File Size Limit**:  Maximum 1000 lines.
 
 ## Key Workflow:
 - Break tasks into small, executable features
@@ -735,7 +741,6 @@ Keep responses concise and focused on the current feature.
 
 ## Tool Usage Guide:
 - **optimize_feature_context**: Use AFTER completing an atomic feature to clear intermediate data and load TODO.md for next feature
-- **enhance_summary**: Use WHEN token count is high (>70k) to summarize conversation while preserving context
 
 Remember: Complete one atomic feature at a time, then use optimize_feature_context before moving to the next feature.
 """}]

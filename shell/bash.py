@@ -169,7 +169,7 @@ def execute_command(command: str, working_dir: str = None, timeout: int = 30,
                 print(f"[DEBUG] Bash not found in PATH")
         
         if capture_output:
-            print(f"[DEBUG] Capture output is True, setting up stdout/stderr capture")
+            # print(f"[DEBUG] Capture output is True, setting up stdout/stderr capture")
             kwargs['stdout'] = subprocess.PIPE
             kwargs['stderr'] = subprocess.PIPE
             kwargs['text'] = True
