@@ -283,7 +283,7 @@ def enhance_summary(messages: List[Any], content: str) -> str:
                     }
                     optimized_messages.append(summary_message)
                 if i > original_count - save_count:
-                    if msg.get('role') == 'user' and not msg.get("content").startswith("## Context Optimization Needed") and not msg.get("content").startswith("## Context Summary"):
+                    if msg.get('role') == 'user' and not msg.get("content").startswith("## Context Optimization Needed") and not msg.get("content").startswith("## Context Summary") and not msg.get("content".startswith("Warning:  context monitoring")):
                         optimized_messages.append(msg)
                     if msg.get('role') == 'assistant':
                         tool_calls = msg.get('tool_calls', [])
@@ -342,6 +342,18 @@ def enhance_summary(messages: List[Any], content: str) -> str:
                 if not isinstance(tool_calls, list):
                     tool_calls = []
                 tool_calls_copy = tool_calls.copy()
+
+        for i, msg in enumerate(optimized_messages):
+            if msg.get('role') == 'assistant':
+                tool_calls = msg.get('tool_calls', [])
+                for j, tool_call in enumerate(tool_calls):
+                    function = tool_call.get('function', {})
+                    name = function.get('name', '')
+                    arguments = function.get('arguments', "{}")
+                    if name in ["write_file"]:
+                        if len(arguments) > 50:
+                            optimized_messages[i]['tool_calls'][j]["function"]["arguments"] = arguments[:50] + "... optimized for summary"
+
 
         # Step 5: Calculate statistics
         optimized_count = len(optimized_messages)
