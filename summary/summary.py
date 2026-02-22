@@ -77,13 +77,6 @@ __ENHANCE_SUMMARY_FUNCTION__ = function_ai(
     parameters=parameters_func([__SUMMARY_PROPERTY_MESSAGES__, __SUMMARY_PROPERTY_CONTENT__])
 )
 
-
-__ENHANCE_SUMMARY_BY_AI_FUNCTION__ = function_ai(
-    name="summary_by_ai",
-    description="Just summarize the history messages and update messages",
-    parameters=parameters_func([])
-)
-
 __ENHANCE_UPDATE_FUNCTION__ = function_ai(
     name="update",
     description="Update the original messages list with the optimized messages.",
@@ -408,125 +401,6 @@ def update(messages_old: List[Any], messages_optimized: List[Any]) -> str:
     messages_old.extend(messages_optimized)
     return json.dumps({"len_optimized": len(messages_optimized)})
 
-from openai import OpenAI
-import os
-
-client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com/")
-
-def summary_by_ai(messages: List[Any]) -> str:
-
-    tool_call_maps={
-        "update": update
-    }
-
-
-    system_prompt = '''
-You are a dialogue optimization expert, tasked with streamlining message history and enhancing structured summarization.
-
-**Optimization Objectives:**
-1. Limit the number of messages to less than 10 (`len(messages) < 10`)
-2. Remove duplicate, redundant, and inconsequential dialogue content
-3. Retain core decisions, key information, and important context
-4. Add a new structured summary message
-
-**Processing Rules:**
-1. **Preserve System Messages**: Keep all necessary system role messages
-2. **Core Dialogue Compression**: Merge consecutive same-role messages; remove greetings, acknowledgments, and other minor dialogues
-3. **Key Information Extraction**: Retain parameter settings, goal definitions, decision nodes, and other critical information
-4. **Timeline Preservation**: Maintain the chronological logic of the original dialogue
-
-**New Summary Format (as the final message):**
-{
-  "role": "assistant",
-  "content": "【Dialogue Summary】\nCurrent Status: [Brief description of current progress]\nCore Objective: [Clearly defined main goal]\nNext Action: [Specific tasks to be executed]"
-}'''
-
-    data = [{
-        "role": "system",
-        "content": system_prompt,
-    },
-    {
-        "role": "user",
-        # "content": f"'''{"this is a testing.  please invoke tool summary  to test"}''' \n\n "
-        "content": f"'''{messages}''' \n\nold messages length is {len(messages)}.\ntarget messages length is less than 10.\n\n"
-        "note:\n1. tool invoke must have result. "
-    }]
-
-    response = client.chat.completions.create(  
-        model='deepseek-chat',
-        messages=data,
-        tools=[__ENHANCE_UPDATE_FUNCTION__],
-        # extra_body={ "thinking": { "type": "enabled" } }
-    )
-
-    # Get response data
-    message = response.choices[0].message
-    if hasattr(message, "reasoning_content"):
-        reasoning_content = message.reasoning_content
-        print(f"🤔 Reasoning:\n{reasoning_content}")
-
-    content = message.content
-    tool_calls = message.tool_calls
-    
-    # Print to log
-    if content:
-        print(f"💬 Content: {content}")
-    if tool_calls:
-        print(f"🔧 Tool calls: {len(tool_calls)}")
-        for i, tool in enumerate(tool_calls):
-            print(f"  {i+1}. {tool.function.name}")
-    else:
-        print("💬 No tool calls.")
-        return ""
-    if tool_calls and len(tool_calls) > 0:
-        print(f"message.model_dump(): {message.model_dump()}")
-    # If there are no tool calls, we have a final answer
-        
-    # Execute tool calls with error handling
-    for tool in tool_calls:
-        try:
-            tool_name = tool.function.name
-            
-            # Check if tool exists
-            if tool_name not in tool_call_maps:
-                error_msg = f"Error: Tool '{tool_name}' not found in tool call map"
-                print(f"❌ {error_msg}")
-                continue
-            
-            # Parse arguments
-            try:
-                args = json.loads(tool.function.arguments)
-            except json.JSONDecodeError as e:
-                error_msg = f"Error: Invalid JSON arguments for tool '{tool_name}': {str(e)}"
-                print(f"❌ {error_msg}")
-                
-                continue
-            
-            # Execute tool
-            tool_function = tool_call_maps[tool_name]
-            print(f"🛠️  Executing: {tool_name}")
-            print(f"   Arguments: {args}")
-            if tool_name == "update":
-                args["messages_old"] = messages
-            try:
-                tool_result = tool_function(**args)
-                print(f"✅ Tool result for {tool_name}: {tool_result[:500]}{'...' if len(tool_result) > 500 else ''}")
-                    
-            except Exception as e:
-                error_msg = f"Error executing tool '{tool_name}': {str(e)}\n{traceback.format_exc()}"
-                tool_result = error_msg
-                print(f"❌ {error_msg}")
-            
-            # Add tool result to messages
-
-            
-        except Exception as e:
-            error_msg = f"Unexpected error processing tool call: {str(e)}\n{traceback.format_exc()}"
-            print(f"❌ {error_msg}")
-    
-    return json.dumps({
-        "optimized_message_count": len(messages),
-    })
 # ============================================================================
 # 工具调用映射
 # ============================================================================
