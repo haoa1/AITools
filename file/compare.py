@@ -72,14 +72,10 @@ def compare_files(file1: str, file2: str, ignore_whitespace: bool = False, show_
         if not os.access(file2, os.R_OK):
             return f"Error: No read permission for file: {file2}"
         
-        # Read file contents
-        with open(file1, 'r', encoding='utf-8') as f:
-            content1 = f.read()
-        with open(file2, 'r', encoding='utf-8') as f:
-            content2 = f.read()
-        
-        # Handle encoding fallback if UTF-8 fails
+        # Read file contents with encoding fallback
         except_list = []
+        
+        # Read file1
         try:
             with open(file1, 'r', encoding='utf-8') as f:
                 content1 = f.read()
@@ -90,6 +86,7 @@ def compare_files(file1: str, file2: str, ignore_whitespace: bool = False, show_
             except Exception as e:
                 except_list.append(f"Error reading {file1}: {str(e)}")
         
+        # Read file2
         try:
             with open(file2, 'r', encoding='utf-8') as f:
                 content2 = f.read()
@@ -101,12 +98,13 @@ def compare_files(file1: str, file2: str, ignore_whitespace: bool = False, show_
                 except_list.append(f"Error reading {file2}: {str(e)}")
         
         if except_list:
-            return "\\n".join(except_list)
+            return "\n".join(except_list)
         
         # Prepare content for comparison
         if ignore_whitespace:
-            content1 = '\\n'.join([line.rstrip() for line in content1.splitlines()])
-            content2 = '\\n'.join([line.rstrip() for line in content2.splitlines()])
+            # Strip whitespace from both ends of each line
+            content1 = '\n'.join([line.strip() for line in content1.splitlines()])
+            content2 = '\n'.join([line.strip() for line in content2.splitlines()])
         
         # Compare contents
         if content1 == content2:
@@ -130,11 +128,11 @@ def compare_files(file1: str, file2: str, ignore_whitespace: bool = False, show_
                     tofile=file2,
                     lineterm=''
                 )
-                diff_text = '\\n'.join(diff)
+                diff_text = '\n'.join(diff)
                 if diff_text:
-                    result += f"\\n\\nDifferences:\\n{diff_text}"
+                    result += f"\n\nDifferences:\n{diff_text}"
                 else:
-                    result += "\\n(No detailed diff available)"
+                    result += "\n(No detailed diff available)"
             
             return result
             

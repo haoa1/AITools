@@ -42,9 +42,12 @@ __WRITE_APPEND_FUNCTION__ = function_ai(name="append_to_file",
                                        description="This function appends content to the end of a file.",
                                        parameters=parameters_func([__WRITE_PROPERTY_ONE__, __WRITE_PROPERTY_TWO__, __WRITE_PROPERTY_THREE__, __WRITE_PROPERTY_5__]))
 
-__WRITE_AT_OFFSET_FUNCTION__ = function_ai(name="write_at_offset",
-                                          description="This function writes content at a specific offset in a file.",
+__INSERT_AT_OFFSET_FUNCTION__ = function_ai(name="insert_at_offset",
+                                          description="This function inserts content at a specific offset in a file (insert operation).",
                                           parameters=parameters_func([__WRITE_PROPERTY_ONE__, __WRITE_PROPERTY_TWO__, __WRITE_PROPERTY_THREE__, __WRITE_PROPERTY_4__, __WRITE_PROPERTY_5__]))
+
+# Backward compatibility alias
+__WRITE_AT_OFFSET_FUNCTION__ = __INSERT_AT_OFFSET_FUNCTION__
 
 tools = [__WRITE_FUNCTION__, __WRITE_APPEND_FUNCTION__, __WRITE_AT_OFFSET_FUNCTION__]
 
@@ -143,17 +146,17 @@ def append_to_file(file_path: str, content: str, mode: str = "a", encoding: str 
     except Exception as e:
         return f"Error: Unexpected error when appending to file: {str(e)}"
 
-def write_at_offset(file_path: str, content: str, mode: str = "w", offset: int = 0, encoding: str = "utf-8") -> str:
+def insert_at_offset(file_path: str, content: str, mode: str = "w", offset: int = 0, encoding: str = "utf-8") -> str:
     '''
-    Writes content at a specific offset in a file.
+    Inserts content at a specific offset in a file (insert operation, not overwrite).
     
     :param file_path: Path of the file
     :type file_path: str
-    :param content: Content to write (base64 encoded for binary modes)
+    :param content: Content to insert (base64 encoded for binary modes)
     :type content: str
-    :param mode: Write mode - 'w' (text overwrite), 'wb' (binary overwrite), 'a' (text append), 'ab' (binary append)
+    :param mode: Insert mode - 'w' (text insert), 'wb' (binary insert), 'a' (text append), 'ab' (binary append)
     :type mode: str
-    :param offset: Position to start writing (for insert operations)
+    :param offset: Position to insert content (0 = beginning of file)
     :type offset: int
     :param encoding: File encoding for text modes
     :type encoding: str
@@ -200,7 +203,7 @@ def write_at_offset(file_path: str, content: str, mode: str = "w", offset: int =
             return f"Successfully appended to {file_path}"
         
         elif offset == 0:
-            # Write at beginning (overwrite entire file)
+            # Insert at beginning (overwrite entire file)
             with open(file_path, open_mode) as file:
                 file.write(content_to_write)
             return f"Successfully wrote to {file_path}"
@@ -236,7 +239,7 @@ def write_at_offset(file_path: str, content: str, mode: str = "w", offset: int =
                                 temp_file.write(chunk)
                                 bytes_read += len(chunk)
                     
-                    # Write new content
+                    # Insert new content
                     temp_file.write(content_to_write)
                     
                     # Copy remaining content
@@ -252,7 +255,7 @@ def write_at_offset(file_path: str, content: str, mode: str = "w", offset: int =
                 
                 # Replace original file with temp file
                 shutil.move(temp_path, file_path)
-                return f"Successfully wrote at offset {offset} in {file_path}"
+                return f"Successfully inserted at offset {offset} in {file_path}"
                 
             except Exception as e:
                 # Clean up temp file on error
@@ -264,10 +267,14 @@ def write_at_offset(file_path: str, content: str, mode: str = "w", offset: int =
                 raise e
                 
     except Exception as e:
-        return f"Error: Unexpected error when writing at offset: {str(e)}"
+        return f"Error: Unexpected error when inserting at offset: {str(e)}"
+
+# Backward compatibility alias
+write_at_offset = insert_at_offset
 
 TOOL_CALL_MAP = {
     "write_file": write_file,
     "append_to_file": append_to_file,
-    "write_at_offset": write_at_offset,
+    "insert_at_offset": insert_at_offset,
+    "write_at_offset": write_at_offset,  # Backward compatibility
 }

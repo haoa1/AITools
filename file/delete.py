@@ -41,7 +41,9 @@ __DELETE_PROPERTY_6__ = property_param(
 
 __DELETE_PROPERTY_7__ = property_param(
     name="mode",
-    description="The mode for deletion - 'r' (text mode, default) or 'rb' (binary mode).",
+    description="The mode for deletion - 'r' (text mode, default) or 'rb' (binary mode). "
+                "In text mode ('r'), offset and length are character counts and files are read/written using UTF-8 encoding. "
+                "In binary mode ('rb'), offset and length are byte counts and files are read/written as raw bytes without encoding.",
     t="string"
 )
 
@@ -148,7 +150,10 @@ def delete_at_offset(file_path: str, offset: int, length: int, mode: str = "r") 
     :type offset: int
     :param length: Number of characters/bytes to delete
     :type length: int
-    :param mode: Deletion mode - 'r' (text mode, default) or 'rb' (binary mode)
+    :param mode: Deletion mode - 'r' (text mode, default) or 'rb' (binary mode).
+                 In text mode ('r'), offset and length are character counts.
+                 In binary mode ('rb'), offset and length are byte counts.
+                 For UTF-8 files, Chinese characters are 3 bytes each in binary mode.
     :type mode: str
     :return: Success or error message
     :rtype: str
@@ -173,6 +178,13 @@ def delete_at_offset(file_path: str, offset: int, length: int, mode: str = "r") 
         if not os.path.isfile(file_path):
             return f"Error: Path is not a file: {file_path}"
         
+        # Check if file is writable
+        try:
+            with open(file_path, 'a' if mode == 'r' else 'ab'):
+                pass
+        except PermissionError:
+            return f"Error: Permission denied. File is not writable: {file_path}"
+
         # For large files, use efficient block-based approach
         import tempfile
         import shutil
@@ -203,12 +215,13 @@ def delete_at_offset(file_path: str, offset: int, length: int, mode: str = "r") 
                     
                     # Skip the part to be deleted
                     if length > 0:
+                        chunk_size = 8192
                         bytes_to_skip = length
                         while bytes_to_skip > 0:
                             chunk = src_file.read(min(chunk_size, bytes_to_skip))
                             if not chunk:
                                 # Reached EOF while skipping
-                                break
+                                return f"Error: File size insufficient to delete {length} characters/bytes from offset {offset}"
                             bytes_to_skip -= len(chunk)
                     
                     # Copy remaining content
@@ -218,26 +231,27 @@ def delete_at_offset(file_path: str, offset: int, length: int, mode: str = "r") 
                         if not chunk:
                             break
                         temp_file.write(chunk)
+                    
+                    # Check if we successfully copied all remaining content
+                    # If we reached EOF while trying to copy, it means the original
+                    # file was smaller than expected (offset was beyond file size)
+                    # We need to check if we actually reached the offset position
+                    if offset > 0 and bytes_read < offset:
+                        return f"Error: Offset {offset} is beyond file size {bytes_read}"
             
             # Replace original file with temp file
             shutil.move(temp_path, file_path)
+            return f"Successfully deleted {length} characters/bytes from offset {offset} in {file_path}"
             
-            unit = "bytes" if mode == 'rb' else "characters"
-            return f"Successfully deleted {length} {unit} at offset {offset} from {file_path}"
-                
         except Exception as e:
-            # Clean up temp file on error
+            # Clean up temp file if it exists
             if temp_path and os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except:
                     pass
+            raise e
             
-            if "is beyond file size" in str(e):
-                return f"Error: Offset {offset} is beyond file size"
-            else:
-                return f"Error: Unexpected error when deleting at offset: {str(e)}"
-                
     except Exception as e:
         return f"Error: Unexpected error when deleting at offset: {str(e)}"
 

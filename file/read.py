@@ -90,7 +90,7 @@ __READ_LINES_RANGE_FUNCTION__ = function_ai(name="read_lines_range",
                                                 property_param(name="end_line", description="The ending line number (1-indexed).", t="integer", required=True)
                                             ]))
 
-tools=[__READ_OFFSET_FUNCTION__, __READ_START_LINES_FUNCTION__, __READ_TAIL_LINES_FUNCTION__,
+tools=[__READ_FUNCTION__, __READ_OFFSET_FUNCTION__, __READ_START_LINES_FUNCTION__, __READ_TAIL_LINES_FUNCTION__,
        __GET_FILE_SIZE_FUNCTION__, __READ_LINE_CONTEXT_FUNCTION__, __READ_LINES_RANGE_FUNCTION__]
 
 # 已有函数实现...
@@ -447,7 +447,7 @@ def read_lines_range_internal(file_path: str, start_line: int, end_line: int) ->
     return str(lines)
 
 TOOL_CALL_MAP={
-    # "read_file": read_file,
+    "read_file": read_file,
     "read_file_by_offset": read_file_by_offset,
     "read_start_lines": read_start_lines,
     "read_tail_lines": read_tail_lines,

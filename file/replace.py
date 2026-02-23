@@ -102,6 +102,10 @@ def replace_in_file(file_path: str, old_text: str, new_text: str, count: int = -
         with open(file_path, 'r', encoding='utf-8') as file:
             content = file.read()
         
+        # Check for empty old_text (would match everywhere)
+        if old_text == "":
+            return "Error: Old text cannot be empty"
+        
         # Perform replacement
         if case_sensitive:
             if count == -1:
