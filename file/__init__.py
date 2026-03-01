@@ -16,12 +16,6 @@ __description__ = "File system operations module"
 # Import all file operation functions
 from .read import (
     read_file,
-    read_file_by_offset,
-    read_start_lines,
-    read_tail_lines,
-    get_file_size,
-    read_line_context,
-    read_lines_range,
 )
 
 from .write import (
@@ -44,23 +38,20 @@ from .replace import (
 
 from .compare import compare_files
 
+from .search import glob
+
 # List of all exported functions
 __all__ = [
-    'read_file',
-    'read_file_by_offset',
-    'read_start_lines',
-    'read_tail_lines',
-    'get_file_size',
-    'read_line_context',
-    'read_lines_range',
-    'write_file',
-    'append_to_file',
-    'write_at_offset',
-    'delete_file',
-    'delete_lines',
-    'delete_at_offset',
-    'replace_in_file',
-    'replace_lines',
-    'replace_with_regex',
-    'compare_files',
+    "read_file",
+    "write_file",
+    "append_to_file",
+    "write_at_offset",
+    "delete_file",
+    "delete_lines",
+    "delete_at_offset",
+    "replace_in_file",
+    "replace_lines",
+    "replace_with_regex",
+    "compare_files",
+    "glob",
 ]
