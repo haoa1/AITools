@@ -61,8 +61,8 @@ def load_manual_imports():
     # from web_search.web_search import TOOL_CALL_MAP as web_search_tool_map
 
     # Import stock module
-    # from stock.stock import tools as stock_tools
-    # from stock.stock import TOOL_CALL_MAP as stock_tool_map
+    from stock.stock import tools as stock_tools
+    from stock.stock import TOOL_CALL_MAP as stock_tool_map
 
     # Import summary module
     from summary.summary import tools as summary_tools
@@ -91,7 +91,7 @@ def load_manual_imports():
     #          database_tools + web_search_tools + stock_tools + summary_tools + project_context_tools + diagram_tools + architect_tools + pdf_tools + markdown_tools)
     
     tools = (read_tools + write_tools + delete_tools + replace_tools + 
-             git_tools + bash_tools + workspace_tools + 
+             git_tools + bash_tools + workspace_tools + stock_tools +
              network_tools +
              summary_tools + project_context_tools + architect_tools)
 
@@ -110,7 +110,7 @@ def load_manual_imports():
     # tool_call_maps.update(enhanced_interaction_tool_map)
     # tool_call_maps.update(database_tool_map)
     # tool_call_maps.update(web_search_tool_map)
-    # tool_call_maps.update(stock_tool_map)
+    tool_call_maps.update(stock_tool_map)
     tool_call_maps.update(summary_tool_map)
     tool_call_maps.update(project_context_tool_map)
     # tool_call_maps.update(diagram_tool_map)
@@ -124,7 +124,7 @@ def load_manual_imports():
 
 # List of tools that require messages parameter
 TOOLS_REQUIRING_MESSAGES = [
-    'enhance_summary',
+    'compact',
     "summary_by_ai",
     "optimize_feature_context"
 ]

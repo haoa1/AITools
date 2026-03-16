@@ -83,7 +83,13 @@ __ENHANCE_UPDATE_FUNCTION__ = function_ai(
     parameters=parameters_func([__SUMMARY_PROPERTY_MESSAGES_OPTIMIZED__])
 )
 
-tools = [__ENHANCE_SUMMARY_FUNCTION__]
+
+__ENHANCE_COMPACT__ = function_ai(
+    name="compact",
+    description="Use this:\n1. context is too mush, 2. user requirement.",
+    parameters=parameters_func([])
+)
+tools = [__ENHANCE_COMPACT__]
 
 # ============================================================================
 # Summary核心实现 - 智能保留策略
@@ -229,6 +235,55 @@ def find_tool_call_pairs(messages: List[Dict]) -> Tuple[Set[int], Dict[str, int]
                 keep_indices.add(i)
     
     return keep_indices, tool_call_to_assistant
+
+
+from openai import OpenAI
+import os
+from summary.template import template 
+def compact(messages: List[Any]) -> str:
+    if len(messages) < 20:
+        return ""
+
+    # origin messages
+    optimized_messages = []
+    optimized_messages.append(messages[0])
+
+    need_skip = True
+    recent_compact_messages = []
+    for i, msg in enumerate(messages[-15:-1]):
+        if msg.get('role') == 'assistant':
+            need_skip = False
+        if not need_skip:
+            recent_compact_messages.append(msg)
+
+    systemPrompt = '''
+你是上下文压缩大师
+'''
+    need_compact_messages = [
+        {"role": "system",
+        "content": systemPrompt},
+        {"role": "user",
+         "content": template(messages[-10:-1])}
+    ]
+
+    client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com/")
+    response = client.chat.completions.create(
+        model=os.getenv("DEEPSEEK_MODEL", 'deepseek-chat'),
+        messages=need_compact_messages,
+        extra_body={ "thinking": { "type": "enabled" } }
+    )
+
+    optimized_messages.append({
+        "role": "user",
+        "content": response.choices[0].message.content
+    })
+    print(response.choices[0].message.content)
+    print("\n\n\n")
+    optimized_messages.extend(recent_compact_messages)
+    
+    messages.clear()
+    messages.extend(optimized_messages)
+    return "compacted"
 
 def enhance_summary(messages: List[Any], content: str) -> str:
     '''
@@ -409,75 +464,77 @@ def update(messages_old: List[Any], messages_optimized: List[Any]) -> str:
 #     "enhance_summary": enhance_summary
 # }
 TOOL_CALL_MAP = {
-    "enhance_summary": enhance_summary
+    "compact": compact
 }
 
 # ============================================================================
 # 测试代码
 # ============================================================================
 
+
 if __name__ == "__main__":
-    print("AITools Summary模块测试 (智能保留策略版)")
-    print("=" * 60)
+    pass
+    # print("AITools Summary模块测试 (智能保留策略版)")
+    # print("=" * 60)
     
-    # 测试数据 - 模拟一个复杂对话
-    test_messages = [
-        {"role": "system", "content": "你是一个软件专家，拥有操作系统、文件、网络、Git等工具。请谨慎使用工具，必要时向用户确认。"},
-        {"role": "user", "content": "请帮我创建一个Python项目，用于处理数据分析和可视化。"},
-        {"role": "assistant", "content": "好的，我将帮您创建Python项目。请告诉我项目名称和需要的功能。"},
-        {"role": "user", "content": "项目名为DataAnalyzer，需要pandas, matplotlib, seaborn库。"},
-        {"role": "assistant", "content": "正在创建项目DataAnalyzer..."},
-        {"role": "tool", "tool_call_id": "call_123", "content": "项目目录创建成功"},
-        {"role": "assistant", "content": "正在安装依赖库..."},
-        {"role": "tool", "tool_call_id": "call_456", "content": "Error: 网络连接失败，无法安装pandas"},
-        {"role": "assistant", "content": "安装遇到错误，正在尝试其他方法..."},
-        {"role": "tool", "tool_call_id": "call_789", "content": "已使用本地缓存安装pandas, matplotlib, seaborn"},
-        {"role": "assistant", "content": "依赖安装成功。正在创建示例代码..."},
-        {"role": "tool", "tool_call_id": "call_999", "content": "示例代码已创建: data_analyzer.py"},
-        {"role": "assistant", "content": "项目创建完成！包含数据分析和可视化示例代码。"},
-        {"role": "user", "content": "谢谢！现在请帮我运行测试，确保一切正常。"},
-        {"role": "assistant", "content": "正在运行测试..."},
-        {"role": "tool", "tool_call_id": "call_101", "content": "测试通过：所有功能正常"},
-    ]
+    # # 测试数据 - 模拟一个复杂对话
+    # test_messages = [
+    #     {"role": "system", "content": "你是一个软件专家，拥有操作系统、文件、网络、Git等工具。请谨慎使用工具，必要时向用户确认。"},
+    #     {"role": "user", "content": "请帮我创建一个Python项目，用于处理数据分析和可视化。"},
+    #     {"role": "assistant", "content": "好的，我将帮您创建Python项目。请告诉我项目名称和需要的功能。"},
+    #     {"role": "user", "content": "项目名为DataAnalyzer，需要pandas, matplotlib, seaborn库。"},
+    #     {"role": "assistant", "content": "正在创建项目DataAnalyzer..."},
+    #     {"role": "tool", "tool_call_id": "call_123", "content": "项目目录创建成功"},
+    #     {"role": "assistant", "content": "正在安装依赖库..."},
+    #     {"role": "tool", "tool_call_id": "call_456", "content": "Error: 网络连接失败，无法安装pandas"},
+    #     {"role": "assistant", "content": "安装遇到错误，正在尝试其他方法..."},
+    #     {"role": "tool", "tool_call_id": "call_789", "content": "已使用本地缓存安装pandas, matplotlib, seaborn"},
+    #     {"role": "assistant", "content": "依赖安装成功。正在创建示例代码..."},
+    #     {"role": "tool", "tool_call_id": "call_999", "content": "示例代码已创建: data_analyzer.py"},
+    #     {"role": "assistant", "content": "项目创建完成！包含数据分析和可视化示例代码。"},
+    #     {"role": "user", "content": "谢谢！现在请帮我运行测试，确保一切正常。"},
+    #     {"role": "assistant", "content": "正在运行测试..."},
+    #     {"role": "tool", "tool_call_id": "call_101", "content": "测试通过：所有功能正常"},
+    # ]
     
-    # 测试总结增强
-    print("测试enhance_summary函数:")
-    test_summary = "用户请求创建Python数据分析项目DataAnalyzer。助手创建了项目目录，安装依赖时遇到网络错误但通过本地缓存解决，创建了示例代码，最后运行测试通过。"
-    print(f"原始消息数: {len(test_messages)}")
-    print(f"总结内容: {test_summary[:100]}...")
-    print()
+    # # 测试总结增强
+    # print("测试enhance_summary函数:")
+    # test_summary = "用户请求创建Python数据分析项目DataAnalyzer。助手创建了项目目录，安装依赖时遇到网络错误但通过本地缓存解决，创建了示例代码，最后运行测试通过。"
+    # print(f"原始消息数: {len(test_messages)}")
+    # print(f"总结内容: {test_summary[:100]}...")
+    # print()
     
-    # 创建副本用于测试
-    test_messages_copy = test_messages.copy()
+    # # 创建副本用于测试
+    # test_messages_copy = test_messages.copy()
     
-    result = enhance_summary(test_messages_copy, test_summary)
-    print("\n优化结果:")
-    print(result[:500] + "..." if len(result) > 500 else result)
-    print()
+    # result = enhance_summary(test_messages_copy, test_summary)
+    # print("\n优化结果:")
+    # print(result[:500] + "..." if len(result) > 500 else result)
+    # print()
     
-    # 解析结果
-    try:
-        result_dict = json.loads(result)
-        print(f"原始消息数: {result_dict.get('original_message_count')}")
-        print(f"优化后消息数: {result_dict.get('optimized_message_count')}")
-        print(f"优化比例: {result_dict.get('optimization_percentage', 0):.1f}%")
-        print(f"字符减少比例: {result_dict.get('char_reduction_percentage', 0):.1f}%")
-        print(f"保留的消息类型: {result_dict.get('kept_message_types')}")
-        print(f"必须保留的消息数: {result_dict.get('must_keep_count')}")
-        print(f"按重要性选择的消息数: {result_dict.get('selected_by_importance')}")
-        print(f"优化策略: {result_dict.get('optimization_strategy')}")
-        print()
+    # # 解析结果
+    # try:
+    #     result_dict = json.loads(result)
+    #     print(f"原始消息数: {result_dict.get('original_message_count')}")
+    #     print(f"优化后消息数: {result_dict.get('optimized_message_count')}")
+    #     print(f"优化比例: {result_dict.get('optimization_percentage', 0):.1f}%")
+    #     print(f"字符减少比例: {result_dict.get('char_reduction_percentage', 0):.1f}%")
+    #     print(f"保留的消息类型: {result_dict.get('kept_message_types')}")
+    #     print(f"必须保留的消息数: {result_dict.get('must_keep_count')}")
+    #     print(f"按重要性选择的消息数: {result_dict.get('selected_by_importance')}")
+    #     print(f"优化策略: {result_dict.get('optimization_strategy')}")
+    #     print()
         
-        # 显示优化后的消息
-        print("优化后的消息列表:")
-        for i, msg in enumerate(test_messages_copy):
-            role = msg.get('role', 'unknown')
-            content_preview = str(msg.get('content', ''))[:80].replace('\n', ' ')
-            print(f"  {i}. [{role}] {content_preview}{'...' if len(str(msg.get('content', ''))) > 80 else ''}")
+    #     # 显示优化后的消息
+    #     print("优化后的消息列表:")
+    #     for i, msg in enumerate(test_messages_copy):
+    #         role = msg.get('role', 'unknown')
+    #         content_preview = str(msg.get('content', ''))[:80].replace('\n', ' ')
+    #         print(f"  {i}. [{role}] {content_preview}{'...' if len(str(msg.get('content', ''))) > 80 else ''}")
             
-    except Exception as e:
-        print(f"解析结果时出错: {e}")
-        import traceback
-        traceback.print_exc()
+    # except Exception as e:
+    #     print(f"解析结果时出错: {e}")
+    #     import traceback
+    #     traceback.print_exc()
     
-    print("\nSummary模块测试完成!")
+    # print("\nSummary模块测试完成!")
