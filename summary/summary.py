@@ -270,7 +270,7 @@ def compact(messages: List[Any]) -> str:
     response = client.chat.completions.create(
         model=os.getenv("DEEPSEEK_MODEL", 'deepseek-chat'),
         messages=need_compact_messages,
-        extra_body={ "thinking": { "type": "enabled" } }
+        # extra_body={ "thinking": { "type": "enabled" } }
     )
 
     optimized_messages.append({
@@ -281,6 +281,32 @@ def compact(messages: List[Any]) -> str:
     print("\n\n\n")
     optimized_messages.extend(recent_compact_messages)
     
+
+    # must pair
+    tool_calls_copy = []
+    optimized_messages_copy = optimized_messages.copy()
+    for i, msg in enumerate(optimized_messages_copy):
+        if len(tool_calls_copy) >0:
+            if msg.get('role') != 'tool':
+                print("Removing unpaired assistant tool_calls:", tool_calls)
+                optimized_messages.remove(msg)
+                tool_calls_copy=[]
+                continue
+
+            tool_call_id = msg.get('tool_call_id')
+            tmp = tool_calls_copy.copy()
+            for i, tool_call in enumerate(tmp):
+                if tool_call.get("id") == tool_call_id:
+                    tool_calls_copy.remove(tool_call)
+                    continue
+        
+        if msg.get('role') == 'assistant':
+            tool_calls = msg.get('tool_calls', [])
+            # Ensure tool_calls is a list before copying
+            if not isinstance(tool_calls, list):
+                tool_calls = []
+            tool_calls_copy = tool_calls.copy()
+
     messages.clear()
     messages.extend(optimized_messages)
     return "compacted"
