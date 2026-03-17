@@ -53,7 +53,7 @@ __BASH_PROPERTY_8__ = property_param(
     t="string"
 )
 
-__BASH_EXECUTE_FUNCTION__ = function_ai(name="execute_command",
+__BASH_EXECUTE_FUNCTION__ = function_ai(name="bash",
                                          description="Execute a bash command and return the output.",
                                          parameters=parameters_func([__BASH_PROPERTY_ONE__, __BASH_PROPERTY_TWO__, __BASH_PROPERTY_THREE__, __BASH_PROPERTY_4__, __BASH_PROPERTY_5__, __BASH_PROPERTY_6__, __BASH_PROPERTY_8__]))
 
@@ -73,7 +73,7 @@ import os
 import subprocess
 import shutil
 
-def execute_command(command: str, working_dir: str = None, timeout: int = 30, 
+def bash(command: str, working_dir: str = None, timeout: int = 30, 
                     capture_output: bool = True, env_vars: dict = None, 
                     shell: bool = True, input_data: str = None) -> str:
     '''
@@ -324,7 +324,7 @@ def execute_multiple_commands(commands: str, working_dir: str = None,
             results.append(f"Command {i}: {cmd}")
             
             try:
-                output = execute_command(
+                output = bash(
                     command=cmd,
                     working_dir=working_dir,
                     timeout=timeout,
@@ -365,7 +365,7 @@ def get_process_info(process_filter: str = "") -> str:
             else:
                 command = 'ps aux'
         
-        return execute_command(
+        return bash(
             command=command,
             capture_output=True,
             shell=True,
@@ -403,7 +403,7 @@ def get_system_info(**kwargs) -> str:
         
         for cmd in commands:
             results.append(f"$ {cmd}")
-            output = execute_command(cmd, capture_output=True, shell=True, timeout=5)
+            output = bash(cmd, capture_output=True, shell=True, timeout=5)
             results.append(output)
             results.append("-" * 30)
         
@@ -419,16 +419,12 @@ __BASH_SYSTEM_INFO_FUNCTION__ = function_ai(name="get_system_info",
 
 tools = [
     __BASH_EXECUTE_FUNCTION__,
-    __BASH_CHECK_COMMAND_FUNCTION__,
-    __BASH_EXECUTE_MULTIPLE_FUNCTION__,
-    __BASH_GET_PROCESS_INFO_FUNCTION__,
-    __BASH_SYSTEM_INFO_FUNCTION__,
+    # __BASH_CHECK_COMMAND_FUNCTION__,
+    # __BASH_EXECUTE_MULTIPLE_FUNCTION__,
+    # __BASH_GET_PROCESS_INFO_FUNCTION__,
+    # __BASH_SYSTEM_INFO_FUNCTION__,
 ]
 
 TOOL_CALL_MAP = {
-    "execute_command": execute_command,
-    "check_command_exists": check_command_exists,
-    "execute_multiple_commands": execute_multiple_commands,
-    "get_process_info": get_process_info,
-    "get_system_info": get_system_info,
+    "bash": bash,
 }

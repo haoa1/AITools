@@ -250,7 +250,7 @@ def compact(messages: List[Any]) -> str:
 
     need_skip = True
     recent_compact_messages = []
-    for i, msg in enumerate(messages[-15:-1]):
+    for i, msg in enumerate(messages[-15:]):
         if msg.get('role') == 'assistant':
             need_skip = False
         if not need_skip:
@@ -263,7 +263,7 @@ def compact(messages: List[Any]) -> str:
         {"role": "system",
         "content": systemPrompt},
         {"role": "user",
-         "content": template(messages[-10:-1])}
+         "content": template(messages[1:-10])}
     ]
 
     client = OpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com/")
