@@ -37,7 +37,7 @@ __READ_FUNCTION__ = function_ai(
 tools = [__READ_FUNCTION__]
 
 
-def _validate_file(file_path: str) -> str | None:
+def _validate_file(file_path: str) -> str:
     file_path = os.path.normpath(file_path)
     if not os.path.exists(file_path):
         return f"Error: File does not exist: {file_path}"
