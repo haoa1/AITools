@@ -33,7 +33,7 @@ __SEARCH_FUNCTION__ = function_ai(
 tools = [__SEARCH_FUNCTION__]
 
 
-def _validate_path(path: str) -> str | None:
+def _validate_path(path: str) -> str:
     path = os.path.normpath(path)
     if not os.path.exists(path):
         return f"Error: Directory does not exist: {path}"
