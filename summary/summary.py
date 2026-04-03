@@ -271,6 +271,9 @@ Your summary should include the following sections:
 7. Pending Tasks
 8. Current Work
 9. Optional Next Step
+
+## IMPORTANT
+- Load your md file.
 '''
     need_compact_messages = [
         {"role": "system",
