@@ -257,7 +257,20 @@ def compact(messages: List[Any]) -> str:
             recent_compact_messages.append(msg)
 
     systemPrompt = '''
-你是上下文压缩大师
+CRITICAL: Respond with TEXT ONLY. Do NOT call any tools.
+
+Your task is to create a detailed summary of the conversation so far...
+Your summary should include the following sections:
+
+1. Primary Request and Intent
+2. Key Technical Concepts
+3. Files and Code Sections
+4. Errors and fixes
+5. Problem Solving
+6. All user messages
+7. Pending Tasks
+8. Current Work
+9. Optional Next Step
 '''
     need_compact_messages = [
         {"role": "system",
