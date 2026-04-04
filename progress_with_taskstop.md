@@ -1,6 +1,6 @@
 # Claude Code工具复刻进度总结
 
-## 已完成循环 (22个完整循环)
+## 已完成循环 (23个完整循环)
 
 ### 循环1-11: 已完成工具 (详细实现)
 (同之前文档，包含11个完整实现工具)
@@ -70,6 +70,12 @@
 - **核心功能**: 正则表达式文本搜索、三种输出模式(content/files_with_matches/count)、上下文行显示、分页限制
 - **简化内容**: 使用Python原生实现而非ripgrep，不实现type参数，简化glob模式匹配，不实现multiline多行模式
 
+### 循环23: TodoWriteTool (待办事项工具) - 简化实现完成
+- **Claude Code工具**: TodoWriteTool (115行)
+- **AITools状态**: ✅ 简化版本完成 (system/todo_write_tool.py)
+- **核心功能**: 待办事项管理、状态跟踪(pending/in_progress/completed)、验证提醒逻辑、JSON存储
+- **简化内容**: 使用文件存储替代应用状态管理，简化验证提醒逻辑，不实现代理ID管理和会话状态协调
+
 ## 工具类别完成情况
 
 ### 文件操作工具链 ✅
@@ -85,22 +91,23 @@
 - SkillTool (技能管理)
 - ExitPlanModeV2Tool (计划模式)
 - SleepTool (休眠功能)
+- TodoWriteTool (待办事项管理)
 
 ### 标记/待实现工具 ⏳
 - TaskStopTool (任务停止工具)
 
 ## 总体进度统计
 - **总Claude Code工具数**: 58个
-- **已复刻/对齐工具数**: 22个完整 + 1个标记 = 23个 **(39.7%)**
-- **剩余工具数**: 35个
-- **已完成循环**: 22个
-- **当前循环**: 第22个完成，准备第23个
+- **已复刻/对齐工具数**: 23个完整 + 1个标记 = 24个 **(41.4%)**
+- **剩余工具数**: 34个
+- **已完成循环**: 23个
+- **当前循环**: 第23个完成，准备第24个
 
 ## 最近访问的Claude Code源码
 - **源码位置**: `/Users/herotommyly/workspace/claude-code-sourcemap`
 - **版本**: 2.1.88 (基于npm包还原)
 - **工具目录**: `restored-src/src/tools/`
-- **已参考工具**: WebSearchTool, TaskStopTool, FileReadTool, FileWriteTool, FileEditTool, BashTool, AgentTool, SkillTool, ExitPlanModeV2Tool, SleepTool, GlobTool, GrepTool等
+- **已参考工具**: WebSearchTool, TaskStopTool, FileReadTool, FileWriteTool, FileEditTool, BashTool, AgentTool, SkillTool, ExitPlanModeV2Tool, SleepTool, GlobTool, GrepTool, TodoWriteTool等
 
 ## 工具实现策略总结
 1. **优先实现相对独立的工具**
@@ -109,28 +116,28 @@
 4. **保持Claude Code接口兼容性**
 5. **确保充分的单元测试覆盖率**
 
-## 下一个循环建议 (循环23)
+## 下一个循环建议 (循环24)
 
-### 推荐: TodoWriteTool (待办事项工具)
+### 推荐: AskUserQuestionTool (用户提问工具)
 **选择理由**:
-1. **中等复杂度**: 任务管理工具，相对简单实用
-2. **逐步构建**: 为更复杂的任务管理工具（TaskStopTool）奠定基础
-3. **实用性强**: 日常任务管理功能，用户需求高
-
-### 备选: AskUserQuestionTool (用户提问工具)
-**选择理由**:
-1. **交互功能**: 基础用户交互，AI与用户沟通核心功能
-2. **中等复杂度**: 需要处理用户输入和响应
-3. **相对独立**: 不需要复杂的基础设施支持
+1. **交互核心功能**: AI与用户交互的基础工具，实用性强
+2. **中等复杂度**: 需要处理用户输入和响应，相对独立
+3. **逐步构建**: 为更复杂的交互工具奠定基础
 
 ### 备选: ConfigTool (配置工具)
 **选择理由**:
-1. **系统工具**: 配置管理是系统基础功能
-2. **与现有工具整合**: 可与AgentTool、SkillTool等配合
-3. **逐步扩展**: 从简单配置开始，逐步增加复杂功能
+1. **系统基础功能**: 配置管理是系统工具的核心
+2. **与现有工具整合**: 可与AgentTool、SkillTool等配合使用
+3. **逐步扩展**: 从简单配置读写开始，逐步增加复杂功能
+
+### 备选: FileMoveTool (文件移动工具)
+**选择理由**:
+1. **文件操作扩展**: 文件工具链的自然延伸，实用性强
+2. **相对简单**: 文件移动/重命名操作，实现复杂度中等
+3. **Claude Code兼容**: 保持文件操作工具的完整性
 
 ## 工作流优化建议
-基于已完成21个循环的经验：
+基于已完成23个循环的经验：
 
 1. **标准化模板**: 创建标准实现模板（参数、错误处理、JSON输出、元数据）
 2. **测试优化**: 使用mock或极短时间减少测试执行时间
@@ -148,7 +155,7 @@
 6. **模块化设计**: 确保工具可独立使用，便于维护和扩展
 
 ## 后续工作重点
-1. 继续剩余36个工具的简化实现，保持节奏
+1. 继续剩余34个工具的简化实现，保持节奏
 2. 增强已实现工具的功能（按用户反馈和需求逐步添加）
 3. 进行集成测试和系统验证，确保工具协同工作
 4. 优化测试性能，减少测试执行时间
