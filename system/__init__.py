@@ -1,8 +1,13 @@
 """
-System monitoring module for AITools.
-Provides tools for monitoring system resources and performance.
+System monitoring and control module for AITools.
+Provides tools for monitoring system resources and controlling execution.
 """
 
-from .monitor import tools, TOOL_CALL_MAP
+from .monitor import tools as monitor_tools, TOOL_CALL_MAP as monitor_map
+from .sleep import tools as sleep_tools, TOOL_CALL_MAP as sleep_map
+
+# Combine tools and TOOL_CALL_MAPs
+tools = monitor_tools + sleep_tools
+TOOL_CALL_MAP = {**monitor_map, **sleep_map}
 
 __all__ = ['tools', 'TOOL_CALL_MAP']
