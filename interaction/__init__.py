@@ -1,11 +1,12 @@
-from .interaction import tools, TOOL_CALL_MAP
-from .enhanced_interaction import tools as enhanced_tools, TOOL_CALL_MAP as enhanced_tool_call_map
+"""
+User interaction module for AITools.
+Provides tools for asking questions, getting feedback, and other user interactions.
+"""
 
-# Combine tools
-all_tools = tools + enhanced_tools
+from .ask_user_question import tools as ask_user_question_tools, TOOL_CALL_MAP as ask_user_question_map
 
-# Combine tool call maps
-all_tool_call_map = TOOL_CALL_MAP.copy()
-all_tool_call_map.update(enhanced_tool_call_map)
+# Combine tools and TOOL_CALL_MAPs
+tools = ask_user_question_tools
+TOOL_CALL_MAP = {**ask_user_question_map}
 
-__all__ = ['tools', 'TOOL_CALL_MAP', 'enhanced_tools', 'enhanced_tool_call_map', 'all_tools', 'all_tool_call_map']
+__all__ = ['tools', 'TOOL_CALL_MAP']
