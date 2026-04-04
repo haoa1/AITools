@@ -1,6 +1,6 @@
 # Claude Code工具复刻进度总结
 
-## 已完成循环 (21个完整循环)
+## 已完成循环 (22个完整循环)
 
 ### 循环1-11: 已完成工具 (详细实现)
 (同之前文档，包含11个完整实现工具)
@@ -64,6 +64,12 @@
 - **核心功能**: 通配符模式匹配、结果限制、路径处理、执行时间统计
 - **简化内容**: 不包含复杂权限检查、UNC路径处理、高级权限规则匹配
 
+### 循环22: GrepTool (文本搜索工具) - 简化实现完成
+- **Claude Code工具**: GrepTool (577行)
+- **AITools状态**: ✅ 简化版本完成 (file/grep_tool.py)
+- **核心功能**: 正则表达式文本搜索、三种输出模式(content/files_with_matches/count)、上下文行显示、分页限制
+- **简化内容**: 使用Python原生实现而非ripgrep，不实现type参数，简化glob模式匹配，不实现multiline多行模式
+
 ## 工具类别完成情况
 
 ### 文件操作工具链 ✅
@@ -71,6 +77,7 @@
 - FileWriteTool (文件写入)
 - FileEditTool (文件编辑)
 - GlobTool (通配符工具)
+- GrepTool (文本搜索)
 
 ### 系统工具 ✅
 - BashTool (Shell执行)
@@ -84,16 +91,16 @@
 
 ## 总体进度统计
 - **总Claude Code工具数**: 58个
-- **已复刻/对齐工具数**: 21个完整 + 1个标记 = 22个 **(37.9%)**
-- **剩余工具数**: 36个
-- **已完成循环**: 21个
-- **当前循环**: 第21个完成，准备第22个
+- **已复刻/对齐工具数**: 22个完整 + 1个标记 = 23个 **(39.7%)**
+- **剩余工具数**: 35个
+- **已完成循环**: 22个
+- **当前循环**: 第22个完成，准备第23个
 
 ## 最近访问的Claude Code源码
 - **源码位置**: `/Users/herotommyly/workspace/claude-code-sourcemap`
 - **版本**: 2.1.88 (基于npm包还原)
 - **工具目录**: `restored-src/src/tools/`
-- **已参考工具**: WebSearchTool, TaskStopTool, FileReadTool, FileWriteTool, FileEditTool, BashTool, AgentTool, SkillTool, ExitPlanModeV2Tool, SleepTool, GlobTool等
+- **已参考工具**: WebSearchTool, TaskStopTool, FileReadTool, FileWriteTool, FileEditTool, BashTool, AgentTool, SkillTool, ExitPlanModeV2Tool, SleepTool, GlobTool, GrepTool等
 
 ## 工具实现策略总结
 1. **优先实现相对独立的工具**
@@ -102,26 +109,25 @@
 4. **保持Claude Code接口兼容性**
 5. **确保充分的单元测试覆盖率**
 
-## 下一个循环建议 (循环22)
+## 下一个循环建议 (循环23)
 
-### 推荐: GrepTool (文本搜索工具)
+### 推荐: TodoWriteTool (待办事项工具)
 **选择理由**:
-1. **文件操作扩展**: 与文件工具链相关，实用性强
-2. **代码量适中**: 需要分析具体行数，但应该可简化实现
-3. **与现有工具整合**: 可与FileReadTool、GlobTool配合使用
-4. **实用性强**: 文本搜索是常见需求
-
-### 备选: TodoWriteTool (待办事项工具)
-**选择理由**:
-1. **中等复杂度**: 可能相对简单
-2. **实用性强**: 任务管理功能
-3. **逐步构建**: 为复杂任务工具奠定基础
+1. **中等复杂度**: 任务管理工具，相对简单实用
+2. **逐步构建**: 为更复杂的任务管理工具（TaskStopTool）奠定基础
+3. **实用性强**: 日常任务管理功能，用户需求高
 
 ### 备选: AskUserQuestionTool (用户提问工具)
 **选择理由**:
-1. **交互功能**: 基础用户交互，中等复杂度
-2. **实用性强**: AI与用户交互核心功能
-3. **相对独立**: 不需要复杂基础设施
+1. **交互功能**: 基础用户交互，AI与用户沟通核心功能
+2. **中等复杂度**: 需要处理用户输入和响应
+3. **相对独立**: 不需要复杂的基础设施支持
+
+### 备选: ConfigTool (配置工具)
+**选择理由**:
+1. **系统工具**: 配置管理是系统基础功能
+2. **与现有工具整合**: 可与AgentTool、SkillTool等配合
+3. **逐步扩展**: 从简单配置开始，逐步增加复杂功能
 
 ## 工作流优化建议
 基于已完成21个循环的经验：
