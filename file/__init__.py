@@ -7,6 +7,7 @@ This module provides comprehensive file system operations including:
 - Deleting files and file content
 - Editing files by replacing text
 - Comparing files
+- Searching files with grep and glob patterns
 """
 
 __version__ = "1.0.0"
@@ -36,6 +37,8 @@ from .compare import compare_files
 
 from .search import glob
 
+from .grep import grep
+
 # List of all exported functions
 __all__ = [
     "read_file",
@@ -46,4 +49,5 @@ __all__ = [
     "edit_file",
     "compare_files",
     "glob",
+    "grep",
 ]
