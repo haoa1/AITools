@@ -3,9 +3,9 @@ File operations module for AITools.
 
 This module provides comprehensive file system operations including:
 - Reading files with various methods
-- Writing and appending to files
+- Writing files (overwrite only)
 - Deleting files and file content
-- Replacing content in files
+- Editing files by replacing text
 - Comparing files
 """
 
@@ -20,8 +20,6 @@ from .read import (
 
 from .write import (
     write_file,
-    append_to_file,
-    write_at_offset,
 )
 
 from .delete import (
@@ -31,9 +29,7 @@ from .delete import (
 )
 
 from .replace import (
-    replace_in_file,
-    replace_lines,
-    replace_with_regex,
+    edit_file,
 )
 
 from .compare import compare_files
@@ -44,14 +40,10 @@ from .search import glob
 __all__ = [
     "read_file",
     "write_file",
-    "append_to_file",
-    "write_at_offset",
     "delete_file",
     "delete_lines",
     "delete_at_offset",
-    "replace_in_file",
-    "replace_lines",
-    "replace_with_regex",
+    "edit_file",
     "compare_files",
     "glob",
 ]
