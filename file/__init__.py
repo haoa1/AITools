@@ -39,6 +39,8 @@ from .search import glob
 
 from .grep import grep
 
+from .notebook_edit import notebook_edit
+
 # List of all exported functions
 __all__ = [
     "read_file",
@@ -50,4 +52,5 @@ __all__ = [
     "compare_files",
     "glob",
     "grep",
+    "notebook_edit",
 ]
