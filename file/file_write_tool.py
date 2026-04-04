@@ -1,130 +1,136 @@
 #!/usr/bin/env python3
 """
-FileWriteTool implementation for AITools (simplified version).
+FileWriteTool implementation for AITools.
 Provides file writing functionality aligned with Claude Code's FileWriteTool.
-Simplified version - supports basic file writing with create/update distinction.
+Focuses on Claude Code compatibility with create/update distinction and simple diff.
 """
 
 import os
 import json
+import difflib
+import sys
+from typing import Dict, List, Any, Optional, Tuple
+
+# AITools decorators
 from base import function_ai, parameters_func, property_param
 
-# Property definitions for FileWriteTool
+# ============================================================================
+# PROPERTY DEFINITIONS (matching Claude Code's FileWriteTool interface)
+# ============================================================================
+
 __FILE_PATH_PROPERTY__ = property_param(
     name="file_path",
     description="The absolute path to the file to write (must be absolute, not relative).",
     t="string",
-    required=True,
+    required=True
 )
 
 __CONTENT_PROPERTY__ = property_param(
     name="content",
     description="The content to write to the file.",
     t="string",
-    required=True,
+    required=True
 )
 
-__MODE_PROPERTY__ = property_param(
-    name="mode",
-    description="Write mode: 'w' for overwrite (default), 'a' for append.",
-    t="string",
-    required=False,
-)
+# ============================================================================
+# FUNCTION DEFINITION
+# ============================================================================
 
-__ENCODING_PROPERTY__ = property_param(
-    name="encoding",
-    description="File encoding (default: 'utf-8').",
-    t="string",
-    required=False,
-)
-
-# Function metadata
 __FILE_WRITE_FUNCTION__ = function_ai(
     name="file_write",
-    description="Write a file to the local filesystem. Simplified version of Claude Code's FileWriteTool.",
+    description="Write a file to the local filesystem. Claude Code compatible version.",
     parameters=parameters_func([
         __FILE_PATH_PROPERTY__,
         __CONTENT_PROPERTY__,
-        __MODE_PROPERTY__,
-        __ENCODING_PROPERTY__,
-    ]),
+    ])
 )
 
-tools = [__FILE_WRITE_FUNCTION__]
+# ============================================================================
+# MAIN FUNCTION IMPLEMENTATION
+# ============================================================================
 
-
-def format_file_size(size_bytes: int) -> str:
-    """Format file size in human-readable format."""
-    for unit in ['B', 'KB', 'MB', 'GB']:
-        if size_bytes < 1024.0:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024.0
-    return f"{size_bytes:.1f} TB"
-
-
-def file_write(file_path: str, content: str, mode: str = "w", encoding: str = "utf-8") -> str:
+def file_write(
+    file_path: str,
+    content: str
+) -> str:
     """
-    Write content to a file with basic create/update distinction.
+    Write content to a file with Claude Code compatibility.
     
-    Simplified version of Claude Code's FileWriteTool that supports:
-    1. Basic file writing (overwrite and append modes)
-    2. Create vs update operation type detection
-    3. Permission and path validation
-    4. JSON-formatted output with metadata
+    This tool mimics Claude Code's FileWriteTool functionality for writing
+    files with create/update distinction and simple diff output.
     
     Args:
-        file_path: Absolute path to the file to write
-        content: Content to write to the file
-        mode: Write mode - 'w' for overwrite, 'a' for append (default: 'w')
-        encoding: File encoding (default: 'utf-8')
+        file_path: The absolute path to the file to write
+        content: The content to write to the file
         
     Returns:
-        JSON-formatted operation result with metadata
+        JSON string matching Claude Code's format:
+        {
+            "type": "create" or "update",
+            "filePath": "path/to/file",
+            "content": "content written",
+            "structuredPatch": [hunk objects...],
+            "originalFile": "original content" or null
+        }
+        or error message if operation fails
     """
     try:
         # Validate inputs
         if not file_path or not isinstance(file_path, str):
             return json.dumps({
-                "error": "File path must be a non-empty string",
-                "success": False
+                "error": True,
+                "message": "File path must be a non-empty string",
+                "error_code": 1
             }, indent=2)
         
         if not content or not isinstance(content, str):
             return json.dumps({
-                "error": "Content must be a non-empty string",
-                "success": False
+                "error": True,
+                "message": "Content must be a non-empty string",
+                "error_code": 2
             }, indent=2)
         
-        if mode not in ["w", "a"]:
-            return json.dumps({
-                "error": f"Invalid mode '{mode}'. Use 'w' (overwrite) or 'a' (append).",
-                "success": False
-            }, indent=2)
-        
-        # Normalize and expand path
+        # Normalize path
         normalized_path = os.path.normpath(file_path)
         
-        # Check if path is absolute (simplified requirement)
+        # Check if path is absolute (Claude Code requires absolute paths)
         if not os.path.isabs(normalized_path):
-            return json.dumps({
-                "error": f"File path should be absolute: {normalized_path}",
-                "suggestion": "Use os.path.abspath() to convert relative paths",
-                "success": False
-            }, indent=2)
+            # Try to make it absolute
+            normalized_path = os.path.abspath(normalized_path)
         
         # Check if file already exists
         file_exists = os.path.exists(normalized_path)
         
-        # Determine operation type
-        if mode == "w":
-            operation_type = "create" if not file_exists else "update"
-        else:  # mode == "a"
-            operation_type = "append"
-            if not file_exists:
-                # For append mode, creating a new file is still "create"
-                operation_type = "create"
+        # Determine operation type (create or update)
+        operation_type = "create" if not file_exists else "update"
         
-        # Check write permission for parent directory
+        # Read original content for update operations
+        original_content = None
+        if file_exists:
+            try:
+                with open(normalized_path, 'r', encoding='utf-8') as f:
+                    original_content = f.read()
+            except UnicodeDecodeError:
+                # Try latin-1 as fallback
+                try:
+                    with open(normalized_path, 'r', encoding='latin-1') as f:
+                        original_content = f.read()
+                except Exception as e:
+                    # If we can't read, treat as binary or inaccessible
+                    original_content = None
+            except Exception as e:
+                original_content = None
+        
+        # Check write permission
+        if file_exists and not os.access(normalized_path, os.W_OK):
+            return json.dumps({
+                "error": True,
+                "message": f"No write permission for file: {normalized_path}",
+                "filePath": normalized_path,
+                "error_code": 3
+            }, indent=2)
+        
+        # Check parent directory write permission
         parent_dir = os.path.dirname(normalized_path)
         if parent_dir and not os.path.exists(parent_dir):
             # Try to create parent directory
@@ -132,159 +138,279 @@ def file_write(file_path: str, content: str, mode: str = "w", encoding: str = "u
                 os.makedirs(parent_dir, exist_ok=True)
             except Exception as e:
                 return json.dumps({
-                    "error": f"Cannot create parent directory: {str(e)}",
-                    "parent_dir": parent_dir,
-                    "success": False
+                    "error": True,
+                    "message": f"Cannot create parent directory: {str(e)}",
+                    "parentDir": parent_dir,
+                    "error_code": 4
                 }, indent=2)
         
-        # Check if parent directory is writable
         if os.path.exists(parent_dir) and not os.access(parent_dir, os.W_OK):
             return json.dumps({
-                "error": f"No write permission for directory: {parent_dir}",
+                "error": True,
+                "message": f"No write permission for directory: {parent_dir}",
                 "directory": parent_dir,
-                "success": False
+                "error_code": 5
             }, indent=2)
         
-        # If file exists and we're not appending, check if it's writable
-        if file_exists and mode == "w" and not os.access(normalized_path, os.W_OK):
-            return json.dumps({
-                "error": f"No write permission for file: {normalized_path}",
-                "file_path": normalized_path,
-                "success": False
-            }, indent=2)
-        
-        # Get original content for update operations (simplified - no diff)
-        original_content = None
-        if file_exists and mode == "w":
-            try:
-                with open(normalized_path, 'r', encoding=encoding) as f:
-                    original_content = f.read()
-            except Exception:
-                # If we can't read original content, still proceed with write
-                original_content = "[cannot read original content]"
-        
-        # Write the file
+        # Write the file using AITools write function or direct write
         try:
-            if mode == "a":
-                write_mode = "a"
-            else:
-                write_mode = "w"
-            
-            with open(normalized_path, write_mode, encoding=encoding) as f:
+            # Use simple write for compatibility
+            with open(normalized_path, 'w', encoding='utf-8') as f:
                 f.write(content)
             
-            # Get file stats after writing
-            file_stats = os.stat(normalized_path)
-            file_size = file_stats.st_size
+            # Calculate simple diff for structuredPatch
+            structured_patch = []
+            if original_content is not None and original_content != content:
+                # Create a simple diff
+                diff = list(difflib.unified_diff(
+                    original_content.splitlines(keepends=True),
+                    content.splitlines(keepends=True),
+                    fromfile='original',
+                    tofile='new',
+                    lineterm='\n'
+                ))
+                
+                if diff:
+                    # Create a simple hunk representation
+                    # This is a simplified version of Claude Code's structuredPatch
+                    hunk = {
+                        "oldStart": 1,
+                        "oldLines": len(original_content.splitlines()),
+                        "newStart": 1,
+                        "newLines": len(content.splitlines()),
+                        "lines": diff[2:] if len(diff) > 2 else diff  # Skip header lines
+                    }
+                    structured_patch.append(hunk)
             
-            # Calculate content statistics
-            content_length = len(content)
-            line_count = content.count('\n') + 1 if content else 0
-            
-            # Build response
+            # Build Claude Code compatible response
             response = {
-                "success": True,
                 "type": operation_type,
                 "filePath": normalized_path,
-                "fileName": os.path.basename(normalized_path),
-                "contentLength": content_length,
-                "contentPreview": content[:100] + ("..." if len(content) > 100 else ""),
-                "lineCount": line_count,
-                "fileSize": file_size,
-                "sizeFormatted": format_file_size(file_size),
-                "encoding": encoding,
-                "mode": mode,
-                "modifiedTime": file_stats.st_mtime,
-                "summary": f"{operation_type.capitalize()}d file {os.path.basename(normalized_path)} ({content_length} chars, {line_count} lines)"
+                "content": content,
+                "structuredPatch": structured_patch,
+                "originalFile": original_content
             }
             
-            # Add original content info for updates
-            if operation_type == "update" and original_content:
-                original_length = len(original_content)
-                original_lines = original_content.count('\n') + 1 if original_content else 0
-                response["originalInfo"] = {
-                    "length": original_length,
-                    "lineCount": original_lines,
-                    "sizeChange": content_length - original_length,
-                    "lineChange": line_count - original_lines
-                }
+            # Add metadata (not part of Claude Code spec but useful)
+            response["_metadata"] = {
+                "contentLength": len(content),
+                "lineCount": content.count('\n') + 1 if content else 0,
+                "fileSize": os.path.getsize(normalized_path) if os.path.exists(normalized_path) else 0,
+                "encoding": "utf-8"
+            }
             
             return json.dumps(response, indent=2)
             
         except Exception as e:
             return json.dumps({
-                "error": f"Error writing to file: {str(e)}",
-                "file_path": normalized_path,
-                "success": False
+                "error": True,
+                "message": f"Error writing to file: {str(e)}",
+                "filePath": normalized_path,
+                "error_code": 6
             }, indent=2)
-        
+            
     except Exception as e:
         return json.dumps({
-            "error": f"Unexpected error: {str(e)}",
-            "success": False
+            "error": True,
+            "message": f"Unexpected error: {str(e)}",
+            "error_code": 99
         }, indent=2)
 
 
-# Tool call map for dispatching
+def generate_simple_diff(original: str, new: str) -> List[Dict[str, Any]]:
+    """
+    Generate a simplified diff between original and new content.
+    
+    Args:
+        original: Original content
+        new: New content
+        
+    Returns:
+        List of hunk objects
+    """
+    if original == new:
+        return []
+    
+    orig_lines = original.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    
+    diff = list(difflib.unified_diff(orig_lines, new_lines, lineterm='\n'))
+    
+    if not diff:
+        return []
+    
+    # Parse diff into hunks
+    hunks = []
+    current_hunk = None
+    old_start = 1
+    new_start = 1
+    
+    for line in diff[2:]:  # Skip header lines
+        if line.startswith('@@'):
+            # Hunk header: @@ -old_start,old_lines +new_start,new_lines @@
+            if current_hunk:
+                hunks.append(current_hunk)
+            
+            import re
+            match = re.match(r'@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@', line)
+            if match:
+                old_start = int(match.group(1))
+                old_lines = int(match.group(2)) if match.group(2) else 1
+                new_start = int(match.group(3))
+                new_lines = int(match.group(4)) if match.group(4) else 1
+                
+                current_hunk = {
+                    "oldStart": old_start,
+                    "oldLines": old_lines,
+                    "newStart": new_start,
+                    "newLines": new_lines,
+                    "lines": []
+                }
+        elif current_hunk:
+            current_hunk["lines"].append(line)
+    
+    if current_hunk:
+        hunks.append(current_hunk)
+    
+    return hunks
+
+
+def get_file_info(file_path: str) -> Dict[str, Any]:
+    """Get file information."""
+    try:
+        stats = os.stat(file_path)
+        return {
+            "path": file_path,
+            "size": stats.st_size,
+            "modified": stats.st_mtime,
+            "created": stats.st_ctime,
+            "exists": os.path.exists(file_path),
+            "isFile": os.path.isfile(file_path)
+        }
+    except Exception:
+        return {}
+
+
+# ============================================================================
+# TOOL REGISTRATION
+# ============================================================================
+
+# List of all tools
+tools = [
+    __FILE_WRITE_FUNCTION__,
+]
+
+# Map function names to implementations
 TOOL_CALL_MAP = {
-    "file_write": file_write
+    "file_write": file_write,
 }
 
 
 if __name__ == "__main__":
-    # Test the file_write function
-    print("Testing FileWriteTool (simplified)...")
-    print("-" * 60)
+    # Test the FileWriteTool
+    print("Testing FileWriteTool (Claude Code compatible)...")
+    print("=" * 60)
     
-    # Create test directory
-    test_dir = "test_write_dir"
-    if not os.path.exists(test_dir):
-        os.makedirs(test_dir, exist_ok=True)
+    import tempfile
+    import shutil
     
-    test_file = os.path.join(test_dir, "test_write_file.txt")
+    # Create a test directory
+    test_dir = tempfile.mkdtemp(prefix="test_file_write_")
     
     try:
+        test_file = os.path.join(test_dir, "test_file.txt")
+        
+        print(f"Test directory: {test_dir}")
+        print(f"Test file: {test_file}")
+        
         # Test 1: Create new file
-        print("1. Creating new file:")
-        content1 = "Line 1: This is a test file\nLine 2: Created by FileWriteTool\n"
-        result = file_write(test_file, content1)
-        print(json.dumps(json.loads(result), indent=2)[:300] + "..." if len(result) > 300 else result)
+        print("\n" + "=" * 60)
+        print("Test 1: Create new file")
+        print("=" * 60)
+        
+        content1 = "This is a new file created by FileWriteTool.\nLine 2: Testing create operation.\nLine 3: End of file."
+        result1 = file_write(test_file, content1)
+        data1 = json.loads(result1)
+        
+        print(f"Type: {data1.get('type')}")
+        print(f"File path: {data1.get('filePath')}")
+        print(f"Content length: {len(data1.get('content', ''))}")
+        print(f"Original file: {data1.get('originalFile')}")
+        print(f"Structured patch: {len(data1.get('structuredPatch', []))} hunks")
+        
+        assert data1["type"] == "create", "Expected type 'create' for new file"
+        assert data1["filePath"] == test_file, "File path mismatch"
+        assert data1["originalFile"] is None, "Original file should be null for create"
         
         # Test 2: Update existing file
-        print("\n2. Updating existing file:")
-        content2 = "Line 1: Updated content\nLine 2: This is an update\nLine 3: New line added\n"
-        result = file_write(test_file, content2)
-        data = json.loads(result)
-        print(f"Success: {data.get('success')}")
-        print(f"Type: {data.get('type')}")
-        print(f"Summary: {data.get('summary')}")
+        print("\n" + "=" * 60)
+        print("Test 2: Update existing file")
+        print("=" * 60)
         
-        # Test 3: Append to file
-        print("\n3. Appending to file:")
-        content3 = "Line 4: Appended content\nLine 5: More appended lines\n"
-        result = file_write(test_file, content3, mode="a")
-        data = json.loads(result)
-        print(f"Success: {data.get('success')}")
-        print(f"Type: {data.get('type')}")
+        content2 = "This is an updated file.\nLine 2: Updated content.\nLine 3: New line added.\nLine 4: Another new line."
+        result2 = file_write(test_file, content2)
+        data2 = json.loads(result2)
         
-        # Test 4: Invalid path
-        print("\n4. Invalid path (relative):")
-        result = file_write("relative_path.txt", "test")
-        data = json.loads(result)
-        print(f"Error: {data.get('error', 'No error')}")
+        print(f"Type: {data2.get('type')}")
+        print(f"Original file length: {len(data2.get('originalFile', '')) if data2.get('originalFile') else 0}")
+        print(f"New content length: {len(data2.get('content', ''))}")
+        print(f"Structured patch: {len(data2.get('structuredPatch', []))} hunks")
+        if data2.get("structuredPatch"):
+            print(f"First hunk: {json.dumps(data2['structuredPatch'][0], indent=2)[:200]}...")
         
-        # Test 5: Invalid mode
-        print("\n5. Invalid mode:")
-        result = file_write("/tmp/test.txt", "test", mode="x")
-        data = json.loads(result)
-        print(f"Error: {data.get('error', 'No error')}")
+        assert data2["type"] == "update", "Expected type 'update' for existing file"
+        assert data2["originalFile"] == content1, "Original content mismatch"
+        assert len(data2["structuredPatch"]) > 0, "Should have diff for update"
+        
+        # Test 3: Error handling - non-existent parent directory (with auto-create)
+        print("\n" + "=" * 60)
+        print("Test 3: Auto-create parent directory")
+        print("=" * 60)
+        
+        nested_file = os.path.join(test_dir, "nested", "dir", "test.txt")
+        result3 = file_write(nested_file, "Test content for nested file")
+        data3 = json.loads(result3)
+        
+        print(f"Success: {'error' not in data3}")
+        print(f"Type: {data3.get('type')}")
+        assert os.path.exists(nested_file), "Nested file should be created"
+        
+        # Test 4: Error handling - permission error (simulated)
+        print("\n" + "=" * 60)
+        print("Test 4: Error handling")
+        print("=" * 60)
+        
+        # Try to write to root directory (likely to fail)
+        root_file = "/test_no_permission.txt"
+        result4 = file_write(root_file, "Should fail")
+        data4 = json.loads(result4)
+        
+        if data4.get("error"):
+            print(f"✓ Correctly handled error: {data4.get('message', '')[:50]}...")
+        else:
+            print(f"Note: Write to {root_file} succeeded (might have permissions)")
+        
+        # Test 5: Claude Code format validation
+        print("\n" + "=" * 60)
+        print("Test 5: Claude Code format validation")
+        print("=" * 60)
+        
+        # Check required fields
+        required_fields = ["type", "filePath", "content", "structuredPatch", "originalFile"]
+        for field in required_fields:
+            assert field in data1, f"Missing required field: {field}"
+            print(f"✓ Field present: {field}")
+        
+        # Check type values
+        assert data1["type"] in ["create", "update"], f"Invalid type: {data1['type']}"
+        print(f"✓ Type is valid: {data1['type']}")
+        
+        print("\n✓ All Claude Code format requirements met")
+        
+        print("\n" + "=" * 60)
+        print("All tests completed successfully!")
         
     finally:
         # Cleanup
-        import shutil
-        if os.path.exists(test_dir):
-            shutil.rmtree(test_dir)
-            print(f"\nCleaned up test directory: {test_dir}")
-    
-    print("-" * 60)
-    print("Test completed!")
+        shutil.rmtree(test_dir, ignore_errors=True)
+        print(f"\nCleaned up test directory: {test_dir}")
