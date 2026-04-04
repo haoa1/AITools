@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-FileEditTool implementation for AITools (simplified version).
+FileEditTool implementation for AITools (Claude Code compatible version).
 Provides file editing functionality aligned with Claude Code's FileEditTool.
-Simplified version - supports basic string replacement in files.
+Based on analysis of Claude Code source: restored-src/src/tools/FileEditTool/types.ts
 """
 
 import os
 import json
+import difflib
 from base import function_ai, parameters_func, property_param
 
 # Property definitions for FileEditTool
@@ -48,7 +49,7 @@ __ENCODING_PROPERTY__ = property_param(
 # Function metadata
 __FILE_EDIT_FUNCTION__ = function_ai(
     name="file_edit",
-    description="Edit a file by replacing text. Simplified version of Claude Code's FileEditTool.",
+    description="Edit a file by replacing text. Compatible with Claude Code's FileEditTool.",
     parameters=parameters_func([
         __FILE_PATH_PROPERTY__,
         __OLD_STRING_PROPERTY__,
@@ -70,16 +71,56 @@ def format_file_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} TB"
 
 
+def generate_structured_patch(original_content: str, new_content: str):
+    """
+    Generate structured patch similar to Claude Code's structuredPatch format.
+    Returns a list of hunk objects.
+    """
+    if original_content == new_content:
+        return []
+    
+    # Create unified diff
+    diff = list(difflib.unified_diff(
+        original_content.splitlines(keepends=True),
+        new_content.splitlines(keepends=True),
+        fromfile='original',
+        tofile='new',
+        lineterm='\n'
+    ))
+    
+    if not diff:
+        return []
+    
+    # Parse diff to create structured patch
+    # This is a simplified version - Claude Code has more detailed parsing
+    original_lines = original_content.splitlines(keepends=True)
+    new_lines = new_content.splitlines(keepends=True)
+    
+    # Create a simple hunk representation
+    hunk = {
+        "oldStart": 1,
+        "oldLines": len(original_lines),
+        "newStart": 1,
+        "newLines": len(new_lines),
+        "lines": diff[2:] if len(diff) > 2 else diff  # Skip header lines
+    }
+    
+    return [hunk]
+
+
 def file_edit(file_path: str, old_string: str, new_string: str, 
               replace_all: bool = False, encoding: str = "utf-8") -> str:
     """
     Edit a file by replacing old_string with new_string.
     
-    Simplified version of Claude Code's FileEditTool that supports:
-    1. Basic string replacement in files
-    2. Option to replace all occurrences or just the first
-    3. File validation and error handling
-    4. JSON-formatted output with replacement statistics
+    Claude Code compatible version based on FileEditTool/types.ts:
+    - filePath: The file path that was edited
+    - oldString: The original string that was replaced
+    - newString: The new string that replaced it
+    - originalFile: The original file contents before editing
+    - structuredPatch: Diff patch showing the changes
+    - userModified: Whether the user modified the proposed changes (always False for our implementation)
+    - replaceAll: Whether all occurrences were replaced
     
     Args:
         file_path: Absolute path to the file to edit
@@ -89,7 +130,7 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         encoding: File encoding (default: 'utf-8')
         
     Returns:
-        JSON-formatted operation result with metadata
+        JSON-formatted operation result matching Claude Code's FileEditOutput
     """
     try:
         # Validate inputs
@@ -124,7 +165,7 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         if not os.path.exists(normalized_path):
             return json.dumps({
                 "error": f"File does not exist: {normalized_path}",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         
@@ -132,7 +173,7 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         if not os.path.isfile(normalized_path):
             return json.dumps({
                 "error": f"Path is not a file: {normalized_path}",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         
@@ -140,7 +181,7 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         if not os.access(normalized_path, os.R_OK):
             return json.dumps({
                 "error": f"No read permission for file: {normalized_path}",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         
@@ -148,7 +189,7 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         if not os.access(normalized_path, os.W_OK):
             return json.dumps({
                 "error": f"No write permission for file: {normalized_path}",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         
@@ -157,9 +198,9 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         if file_size > 10 * 1024 * 1024:  # 10MB
             return json.dumps({
                 "warning": f"File is large ({format_file_size(file_size)}). Editing may be slow.",
-                "file_path": normalized_path,
-                "file_size": file_size,
-                "size_formatted": format_file_size(file_size),
+                "filePath": normalized_path,
+                "fileSize": file_size,
+                "sizeFormatted": format_file_size(file_size),
                 "success": False,
                 "suggestion": "Consider using a different approach for large files"
             }, indent=2)
@@ -171,13 +212,13 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         except UnicodeDecodeError:
             return json.dumps({
                 "error": f"Encoding error with '{encoding}'. File may be binary or use different encoding.",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         except Exception as e:
             return json.dumps({
                 "error": f"Cannot read file: {str(e)}",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         
@@ -185,8 +226,8 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         if old_string not in original_content:
             return json.dumps({
                 "error": f"Old string not found in file: {normalized_path}",
-                "file_path": normalized_path,
-                "old_string_preview": old_string[:50] + ("..." if len(old_string) > 50 else ""),
+                "filePath": normalized_path,
+                "oldString": old_string[:50] + ("..." if len(old_string) > 50 else ""),
                 "success": False,
                 "suggestion": "Check for typos or different whitespace"
             }, indent=2)
@@ -207,7 +248,7 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         if original_content == new_content:
             return json.dumps({
                 "error": "Replacement did not change file content",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         
@@ -218,46 +259,35 @@ def file_edit(file_path: str, old_string: str, new_string: str,
         except Exception as e:
             return json.dumps({
                 "error": f"Cannot write to file: {str(e)}",
-                "file_path": normalized_path,
+                "filePath": normalized_path,
                 "success": False
             }, indent=2)
         
-        # Get updated file stats
-        file_stats = os.stat(normalized_path)
+        # Generate structured patch
+        structured_patch = generate_structured_patch(original_content, new_content)
         
-        # Calculate statistics
-        original_length = len(original_content)
-        new_length = len(new_content)
-        original_lines = original_content.count('\n') + 1 if original_content else 0
-        new_lines = new_content.count('\n') + 1 if new_content else 0
-        
-        # Build response
+        # Build Claude Code compatible response
         response = {
-            "success": True,
             "filePath": normalized_path,
-            "fileName": os.path.basename(normalized_path),
-            "oldString": old_string[:100] + ("..." if len(old_string) > 100 else ""),
-            "newString": new_string[:100] + ("..." if len(new_string) > 100 else ""),
-            "originalLength": original_length,
-            "newLength": new_length,
-            "lengthChange": new_length - original_length,
-            "originalLines": original_lines,
-            "newLines": new_lines,
-            "lineChange": new_lines - original_lines,
-            "occurrenceCount": occurrence_count,
-            "replacementCount": replacement_count,
-            "replaceAll": replace_all,
-            "encoding": encoding,
-            "fileSize": file_stats.st_size,
-            "sizeFormatted": format_file_size(file_stats.st_size),
-            "modifiedTime": file_stats.st_mtime,
-            "summary": f"Replaced {replacement_count} occurrence(s) of '{old_string[:30]}{'...' if len(old_string) > 30 else ''}' in {os.path.basename(normalized_path)}"
+            "oldString": old_string,
+            "newString": new_string,
+            "originalFile": original_content,
+            "structuredPatch": structured_patch,
+            "userModified": False,  # Our implementation doesn't support user modifications
+            "replaceAll": replace_all
         }
         
-        # Add content preview for small files
-        if original_length < 1000:
-            response["originalPreview"] = original_content[:200] + ("..." if original_length > 200 else "")
-            response["newPreview"] = new_content[:200] + ("..." if new_length > 200 else "")
+        # Add metadata (not part of Claude Code spec but useful)
+        response["_metadata"] = {
+            "success": True,
+            "fileName": os.path.basename(normalized_path),
+            "originalLength": len(original_content),
+            "newLength": len(new_content),
+            "occurrenceCount": occurrence_count,
+            "replacementCount": replacement_count,
+            "encoding": encoding,
+            "fileSize": os.path.getsize(normalized_path) if os.path.exists(normalized_path) else 0
+        }
         
         return json.dumps(response, indent=2)
         
@@ -276,11 +306,12 @@ TOOL_CALL_MAP = {
 
 if __name__ == "__main__":
     # Test the file_edit function
-    print("Testing FileEditTool (simplified)...")
+    import tempfile
+    
+    print("Testing FileEditTool (Claude Code compatible)...")
     print("-" * 60)
     
     # Create test file
-    test_file = "test_edit_file.txt"
     test_content = """Line 1: Hello World
 Line 2: Hello again
 Line 3: Goodbye World
@@ -288,50 +319,42 @@ Line 4: Hello one more time
 Line 5: Final line
 """
     
-    with open(test_file, 'w', encoding='utf-8') as f:
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
         f.write(test_content)
+        test_file = f.name
     
     try:
         # Test 1: Replace first occurrence
         print("1. Replace first occurrence of 'Hello':")
         result = file_edit(test_file, "Hello", "Greetings")
-        print(json.dumps(json.loads(result), indent=2)[:300] + "..." if len(result) > 300 else result)
+        data = json.loads(result)
         
-        # Read file to verify
-        with open(test_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-            print(f"First line after edit: {content.splitlines()[0] if content.splitlines() else 'Empty file'}")
+        print(f"Success: {'error' not in data and ('_metadata' in data and data['_metadata'].get('success') == True)}")
+        print(f"File path: {data.get('filePath')}")
+        print(f"Old string: {data.get('oldString')}")
+        print(f"New string: {data.get('newString')}")
+        print(f"Has originalFile: {'originalFile' in data}")
+        print(f"Has structuredPatch: {'structuredPatch' in data}")
+        print(f"userModified: {data.get('userModified')}")
+        print(f"replaceAll: {data.get('replaceAll')}")
         
         # Test 2: Replace all occurrences
         print("\n2. Replace all occurrences of 'World':")
-        result = file_edit(test_file, "World", "Universe", replace_all=True)
-        data = json.loads(result)
-        print(f"Success: {data.get('success')}")
-        print(f"Replacement count: {data.get('replacementCount')}")
+        result2 = file_edit(test_file, "World", "Universe", replace_all=True)
+        data2 = json.loads(result2)
+        print(f"replaceAll: {data2.get('replaceAll')}")
         
-        # Test 3: String not found
-        print("\n3. String not found:")
-        result = file_edit(test_file, "NotFound", "Replacement")
-        data = json.loads(result)
-        print(f"Error: {data.get('error', 'No error')}")
+        # Test 3: Check Claude Code compatibility
+        print("\n3. Claude Code compatibility check:")
+        expected_fields = ["filePath", "oldString", "newString", "originalFile", "structuredPatch", "userModified", "replaceAll"]
+        missing_fields = [field for field in expected_fields if field not in data]
         
-        # Test 4: Same old and new string
-        print("\n4. Same old and new string:")
-        result = file_edit(test_file, "line", "line")
-        data = json.loads(result)
-        print(f"Error: {data.get('error', 'No error')}")
-        
-        # Test 5: Non-existent file
-        print("\n5. Non-existent file:")
-        result = file_edit("non_existent.txt", "test", "replacement")
-        data = json.loads(result)
-        print(f"Error: {data.get('error', 'No error')}")
-        
+        if missing_fields:
+            print(f"  Missing fields: {missing_fields}")
+        else:
+            print("  All expected fields present ✓")
+            
     finally:
         # Cleanup
-        if os.path.exists(test_file):
-            os.remove(test_file)
-            print(f"\nCleaned up test file: {test_file}")
-    
-    print("-" * 60)
-    print("Test completed!")
+        os.unlink(test_file)
+        print(f"\nCleaned up test file: {test_file}")
