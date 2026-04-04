@@ -40,9 +40,15 @@ from .compare import compare_files
 
 from .search import glob
 
+# Import file read tool for Claude Code compatibility
+from .file_read_tool import (
+    file_read,
+)
+
 # List of all exported functions
 __all__ = [
     "read_file",
+    "file_read",
     "write_file",
     "append_to_file",
     "write_at_offset",
