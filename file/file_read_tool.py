@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional, Union
 from base import function_ai, parameters_func, property_param
 
 # Import existing read functionality
-from .read import read_file as aitools_read_file
+from AITools.file.read import read_file as aitools_read_file
 
 # ============================================================================
 # PROPERTY DEFINITIONS (matching Claude Code's FileReadTool interface)

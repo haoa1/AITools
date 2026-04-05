@@ -13,7 +13,7 @@ import shutil
 # Add the project root to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from file.file_read_tool_new import file_read, count_file_lines, format_file_size
+from file.file_read_tool import file_read, count_file_lines, format_file_size
 
 def create_test_file(content: str, suffix: str = ".txt") -> str:
     """Create a temporary test file with given content."""
