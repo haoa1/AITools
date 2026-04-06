@@ -19,7 +19,6 @@ __NOTEBOOK_EDIT_PROPERTY_ONE__ = property_param(
     description="Action to perform on the notebook: 'read', 'write', 'add_cell', 'remove_cell', 'update_cell', 'execute'.",
     t="string",
     required=True,
-    enum=["read", "write", "add_cell", "remove_cell", "update_cell", "execute"]
 )
 
 __NOTEBOOK_EDIT_PROPERTY_TWO__ = property_param(
@@ -38,7 +37,6 @@ __NOTEBOOK_EDIT_PROPERTY_FOUR__ = property_param(
     name="cell_type",
     description="Type of cell for add/update actions: 'code', 'markdown'.",
     t="string",
-    enum=["code", "markdown"]
 )
 
 __NOTEBOOK_EDIT_PROPERTY_FIVE__ = property_param(
@@ -53,7 +51,7 @@ __NOTEBOOK_EDIT_PROPERTY_SIX__ = property_param(
     t="string",
 )
 
-@function_ai(
+__NOTEBOOK_EDIT_FUNCTION__ = function_ai(
     name="notebook_edit",
     description="Edit Jupyter notebook files (.ipynb), similar to Claude Code's NotebookEditTool.",
     category="file"
@@ -422,7 +420,7 @@ CELL PREVIEWS (first {min(5, len(cells))} of {len(cells)}):
 
 
 # Export tools
-tools = [notebook_edit]
+tools = [__NOTEBOOK_EDIT_FUNCTION__]
 TOOL_CALL_MAP = {
     "notebook_edit": notebook_edit
 }

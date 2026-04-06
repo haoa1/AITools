@@ -5,8 +5,10 @@ Provides tools for asking questions, getting feedback, generating briefs, and ot
 
 from .ask_user_question import tools as ask_user_question_tools, TOOL_CALL_MAP as ask_user_question_map
 from .brief import tools as brief_tools, TOOL_CALL_MAP as brief_map
+from .send_message_tool import tools as send_message_tools, TOOL_CALL_MAP as send_message_map
 
-# Combine tools and TOOL_CALL_MAPs
+# Combine tools and TOOL_CALL_MAPs 
+# TODO + send_message_map
 tools = ask_user_question_tools + brief_tools
 TOOL_CALL_MAP = {**ask_user_question_map, **brief_map}
 
