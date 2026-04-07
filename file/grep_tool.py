@@ -467,4 +467,6 @@ def grep(
     return json.dumps(result, ensure_ascii=False)
 
 # ===== 工具注册 =====
-__all__ = ["tools", "grep"]
+TOOL_CALL_MAP = {
+    "grep": grep
+}

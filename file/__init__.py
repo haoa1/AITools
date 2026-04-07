@@ -15,28 +15,28 @@ __author__ = "AITools Team"
 __description__ = "File system operations module"
 
 from .file_write_tool import (
-    write,
+    tools as write_tools, TOOL_CALL_MAP as write_tool_map
 )
 
 from .file_edit_tool import (
-    edit,
+    tools as edit_tools, TOOL_CALL_MAP as edit_tool_map
 )
 
-from .glob_tool import glob
-from .grep_tool import grep
+from .glob_tool import tools as glob_tool, TOOL_CALL_MAP as glob_tool_map
+from .grep_tool import tools as grep_tool, TOOL_CALL_MAP as grep_tool_map
 
 
-from .notebook_edit import notebook_edit
+# from .notebook_edit import notebook_edit
 from .file_read_tool import (
-    read,
+    tools as read_tools, TOOL_CALL_MAP as read_tool_map
 )
 
+
+tools = read_tools + write_tools + edit_tools + glob_tool + grep_tool
+
+TOOL_CALL_MAP = {**read_tool_map, **write_tool_map, **edit_tool_map, **glob_tool_map, **grep_tool_map}
 # List of all exported functions
 __all__ = [
-    "read",
-    "write",
-    "edit",
-    "glob",
-    "grep",
-    "notebook_edit",
+    "tools",
+    "TOOL_CALL_MAP",
 ]
