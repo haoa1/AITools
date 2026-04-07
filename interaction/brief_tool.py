@@ -203,7 +203,7 @@ def _log_analytics_event(event_name: str, event_data: Dict):
 
 __BRIEF_FUNCTION__ = function_ai(
     name="brief",
-    description="Send a message to the user — your primary visible output channel.",
+    description="Send a message to the user — your primary visible output channel, but not blocked to ask user questions. Use it to surface information.",
     parameters=parameters_func([
         __BRIEF_MESSAGE_PROPERTY__,
         __BRIEF_ATTACHMENTS_PROPERTY__,
