@@ -27,6 +27,58 @@ from dataclasses import dataclass, asdict
 from io import StringIO
 import builtins
 import importlib
+from base import function_ai, parameters_func, property_param
+
+__COMMAND_PROPERTY__ = property_param(
+    name="command",
+    description="REPL command, optional values: 'execute', 'enable', 'clear', 'context', 'status'",
+    t="string",
+    required=True
+)
+
+__CODE_PROPERTY__ = property_param(
+    name="code",
+    description="Python code to execute (required when command='execute')",
+    t="string",
+    required=False
+)
+
+__ENABLE_PROPERTY__ = property_param(
+    name="enable",
+    description="Enable or disable REPL mode (required when command='enable')",
+    t="boolean",
+    required=False
+)
+
+__CLEAR_CONTEXT_PROPERTY__ = property_param(
+    name="clear_context",
+    description="Whether to clear the context (when command='clear')",
+    t="boolean",
+    required=False
+)
+
+__GET_CONTEXT_PROPERTY__ = property_param(
+    name="get_context",
+    description="Whether to get detailed context information (when command='context')",
+    t="boolean",
+    required=False
+)
+
+# ============================================================================
+# FUNCTION DEFINITION
+# ============================================================================
+
+__REPL_TOOL_FUNCTION__ = function_ai(
+    name="repl_tool",
+    description="REPL interactive tool (simplified version of Claude Code REPLTool). Executes Python code, manages REPL mode, clears or retrieves context.",
+    parameters=parameters_func([
+        __COMMAND_PROPERTY__,
+        __CODE_PROPERTY__,
+        __ENABLE_PROPERTY__,
+        __CLEAR_CONTEXT_PROPERTY__,
+        __GET_CONTEXT_PROPERTY__,
+    ])
+)
 
 # ===== 数据结构定义 =====
 
@@ -501,7 +553,7 @@ def repl_tool(
 # ===== 工具注册 =====
 
 # 工具列表
-tools = [repl_tool]
+tools = [__REPL_TOOL_FUNCTION__]
 
 # 工具调用映射
 TOOL_CALL_MAP = {
