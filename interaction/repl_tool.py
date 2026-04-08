@@ -114,11 +114,11 @@ class REPLContext:
 
 # 禁止的危险操作
 DISALLOWED_KEYWORDS = [
-    '__import__', 'eval', 'exec', 'compile', 'open', 'file',
+    'eval', 'exec', 'compile', 'open', 'file',
     'os.system', 'subprocess', 'shutil', 'sys.exit', 'quit',
     'globals', 'locals', 'dir', 'type', 'isinstance',
     'getattr', 'setattr', 'delattr', 'hasattr',
-    'memoryview', 'buffer', 'compile', '__builtins__'
+    'memoryview', 'buffer', '__builtins__'
 ]
 
 # 允许的安全模块
@@ -146,11 +146,18 @@ class REPLExecutor:
     def _create_safe_builtins(self) -> dict:
         """创建安全的builtins字典"""
         safe_builtins = {}
+        # 允许的双下划线函数（必需的Python内置函数）
+        allowed_underscore_names = {'__import__', '__build_class__', '__name__'}
+        
         for name in dir(builtins):
-            if name.startswith('_') and name != '__name__':
-                continue
+            # 跳过危险的关键字
             if name in DISALLOWED_KEYWORDS:
                 continue
+                
+            # 允许特定的双下划线函数，跳过其他以下划线开头的名称
+            if name.startswith('_') and name not in allowed_underscore_names:
+                continue
+                
             try:
                 safe_builtins[name] = getattr(builtins, name)
             except:
