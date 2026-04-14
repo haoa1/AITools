@@ -9,7 +9,7 @@ from .send_message_tool import tools as send_message_tools, TOOL_CALL_MAP as sen
 from .repl_tool import tools as repl_tools, TOOL_CALL_MAP as repl_map
 
 # Combine tools and TOOL_CALL_MAPs 
-tools = ask_user_question_tools + brief_tools + repl_tools
-TOOL_CALL_MAP = {**ask_user_question_map, **brief_map, **repl_map, **repl_map}
+tools = ask_user_question_tools
+TOOL_CALL_MAP = {**ask_user_question_map}
 
 __all__ = ['tools', 'TOOL_CALL_MAP']
