@@ -92,7 +92,7 @@ __INTERACTION_DISPLAY_MESSAGE_FUNCTION__ = function_ai(name="display_message",
                                                       description="Display a message to the user with optional formatting and level.",
                                                       parameters=parameters_func([__INTERACTION_PROPERTY_ONE__, __INTERACTION_PROPERTY_8__, __INTERACTION_PROPERTY_9__, __INTERACTION_PROPERTY_11__, __INTERACTION_PROPERTY_12__]))
 
-__INTERACTION_GET_INPUT_FUNCTION__ = function_ai(name="get_user_input",
+__INTERACTION_ASK_USER_FUNCTION__ = function_ai(name="ask_user",
                                                 description="Get input from the user with a prompt.",
                                                 parameters=parameters_func([__INTERACTION_PROPERTY_TWO__, __INTERACTION_PROPERTY_THREE__, __INTERACTION_PROPERTY_5__]))
 
@@ -121,14 +121,14 @@ __INTERACTION_LOG_MESSAGE_FUNCTION__ = function_ai(name="log_message",
                                                   parameters=parameters_func([__INTERACTION_PROPERTY_ONE__, __INTERACTION_PROPERTY_6__, __INTERACTION_PROPERTY_9__]))
 
 tools = [
-    __INTERACTION_DISPLAY_MESSAGE_FUNCTION__,
-    __INTERACTION_GET_INPUT_FUNCTION__,
-    __INTERACTION_SELECT_CHOICE_FUNCTION__,
-    __INTERACTION_CONFIRM_ACTION_FUNCTION__,
-    __INTERACTION_DISPLAY_DATA_FUNCTION__,
-    __INTERACTION_OPEN_EDITOR_FUNCTION__,
-    __INTERACTION_PROGRESS_BAR_FUNCTION__,
-    __INTERACTION_LOG_MESSAGE_FUNCTION__,
+    # __INTERACTION_DISPLAY_MESSAGE_FUNCTION__,
+    __INTERACTION_ASK_USER_FUNCTION__,
+    # __INTERACTION_SELECT_CHOICE_FUNCTION__,
+    # __INTERACTION_CONFIRM_ACTION_FUNCTION__,
+    # __INTERACTION_DISPLAY_DATA_FUNCTION__,
+    # __INTERACTION_OPEN_EDITOR_FUNCTION__,
+    # __INTERACTION_PROGRESS_BAR_FUNCTION__,
+    # __INTERACTION_LOG_MESSAGE_FUNCTION__,
 ]
 
 def _parse_choices(choices_str: str) -> List[str]:
@@ -252,7 +252,7 @@ def display_message(message: str, title: str = None, level: str = "info",
     except Exception as e:
         return f"Error displaying message: {str(e)}"
 
-def get_user_input(prompt: str = "Enter value: ", default_value: str = None, 
+def ask_user(prompt: str = "Enter value: ", default_value: str = None, 
                    timeout: int = 0) -> str:
     '''
     Get input from the user with a prompt.
@@ -352,7 +352,7 @@ def select_from_choices(message: str, choices: str, default_value: str = None,
             prompt += f" [default: {default_index}]"
         prompt += ": "
         
-        selected = get_user_input(prompt, str(default_index) if default_index else None, timeout)
+        selected = ask_user(prompt, str(default_index) if default_index else None, timeout)
         
         if not selected:
             return "Error: No selection made"
@@ -405,7 +405,7 @@ def confirm_action(confirm_text: str = "Are you sure?", default_value: str = "no
             prompt += " [y/N]: "
             default_display = "no"
         
-        response = get_user_input(prompt, default_display, timeout).lower()
+        response = ask_user(prompt, default_display, timeout).lower()
         
         if response in ["yes", "y"]:
             return "Confirmed: yes"
@@ -639,12 +639,12 @@ def log_message(message: str, file_path: str = None, level: str = "info") -> str
         return f"Error logging message: {str(e)}"
 
 TOOL_CALL_MAP = {
-    "display_message": display_message,
-    "get_user_input": get_user_input,
-    "select_from_choices": select_from_choices,
-    "confirm_action": confirm_action,
-    "display_data": display_data,
-    "open_text_editor": open_text_editor,
-    "show_progress": show_progress,
-    "log_message": log_message,
+    # "display_message": display_message,
+    "ask_user": ask_user,
+    # "select_from_choices": select_from_choices,
+    # "confirm_action": confirm_action,
+    # "display_data": display_data,
+    # "open_text_editor": open_text_editor,
+    # "show_progress": show_progress,
+    # "log_message": log_message,
 }
