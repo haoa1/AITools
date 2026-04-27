@@ -10,7 +10,7 @@ Sub-commands:
   stop   - Stop and clean up a sandbox
 
 Architecture:
-  - garuda REPL: subprocess.Popen with PIPE stdin/stdout (pipe method)
+  - garuda REPL: subprocess.Popen with PTY (pseudo-terminal) for reliable readline I/O
   - Bash workspace: tmux session with single window
   - Async notifications: Garuda event system (optional)
   - Isolated workspace: /tmp/garuda-sandbox-{name}/
@@ -18,6 +18,7 @@ Architecture:
 
 import os
 import sys
+import pty
 import time
 import json
 import uuid
@@ -59,6 +60,7 @@ class SandboxInstance:
         self.reader_thread: Optional[threading.Thread] = None
         self.reader_running = False
         self.tmux_session = f"garuda-sandbox-{name}"
+        self.pty_master_fd: Optional[int] = None  # PTY master for reading+writing
 
         # Output buffer thread safety
         self._buffer = ""
@@ -90,7 +92,7 @@ class SandboxInstance:
     def wait_for_prompt_in_buffer(self, prompt: str = "Garuda >", timeout: float = 120.0) -> str:
         """Block until the prompt appears in buffer, then return accumulated output."""
         deadline = time.time() + timeout
-        last_len = 0
+        last_len = -1  # Force first check
         while time.time() < deadline:
             with self._buffer_lock:
                 current_len = len(self._buffer)
@@ -111,7 +113,7 @@ class SandboxInstance:
                     with self._buffer_lock:
                         self._buffer = ""
                     return response
-            time.sleep(0.1)
+            time.sleep(0.05)
         raise TimeoutError(f"Timed out after {timeout}s waiting for Garuda prompt. Buffer so far: {self._buffer[-200:]!r}")
 
     def has_event(self) -> bool:
@@ -126,6 +128,14 @@ class SandboxInstance:
     def cleanup(self, remove_dir: bool = True):
         """Clean up all resources."""
         self.reader_running = False
+
+        # Close PTY master
+        if self.pty_master_fd is not None:
+            try:
+                os.close(self.pty_master_fd)
+            except Exception:
+                pass
+            self.pty_master_fd = None
 
         # Kill garuda process
         if self.garuda_process and self.garuda_process.poll() is None:
@@ -164,35 +174,30 @@ class SandboxInstance:
 # =============================================================================
 
 def _reader_worker(si: SandboxInstance):
-    """Background thread: continuously reads from garuda process stdout into buffer."""
+    """Background thread: reads from PTY master fd into buffer via select."""
     si.reader_running = True
-    proc = si.garuda_process
-    if not proc or not proc.stdout:
+    master_fd = si.pty_master_fd
+    if master_fd is None:
         si.reader_running = False
         return
 
     try:
-        while si.reader_running and proc.poll() is None:
-            ready, _, _ = select.select([proc.stdout], [], [], 0.5)
-            if ready:
-                chunk = os.read(proc.stdout.fileno(), 4096)
+        while si.reader_running:
+            ready, _, _ = select.select([master_fd], [], [], 0.3)
+            if not ready:
+                continue
+            try:
+                chunk = os.read(master_fd, 4096)
                 if not chunk:
                     break
                 text = chunk.decode("utf-8", errors="replace")
                 si.append_to_buffer(text)
-        # Read remaining after process ends
-        while True:
-            ready, _, _ = select.select([proc.stdout], [], [], 0.5)
-            if ready:
-                chunk = os.read(proc.stdout.fileno(), 4096)
-                if not chunk:
-                    break
-                text = chunk.decode("utf-8", errors="replace")
-                si.append_to_buffer(text)
-            else:
+            except OSError:
                 break
-    except Exception:
-        pass
+    except Exception as e:
+        import traceback
+        print(f"[SANDBOX READER ERROR] {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
     finally:
         si.reader_running = False
 
@@ -202,7 +207,7 @@ def _reader_worker(si: SandboxInstance):
 # =============================================================================
 
 def _start_sandbox(name: str, garuda_path: str = "garuda", timeout: float = 15.0) -> Dict:
-    """Start a sandbox: create workspace, start garuda pipe process, create tmux."""
+    """Start a sandbox: create workspace, start garuda via PTY, create tmux."""
     with _sandboxes_lock:
         if name in _sandboxes:
             return {"error": f"Sandbox '{name}' already exists"}
@@ -235,31 +240,40 @@ path = "{ws_workspace}"
 
         si = SandboxInstance(name, workspace_dir)
 
-        # Start garuda as subprocess with PIPE
-        # Set GARUDA_SANDBOX_CHILD to prevent recursive sandbox tool loading
-        sandbox_env = {
-            **os.environ,
-            "GARUDA_CONFIG": config_path,
-            "GARUDA_SANDBOX_CHILD": "1"
-        }
+        # Open PTY for garuda I/O
+        master_fd, slave_fd = pty.openpty()
+
+        # Start garuda as subprocess with PTY slave as stdin/stdout/stderr
         try:
             proc = subprocess.Popen(
-                [garuda_path, "-i"],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                [garuda_path, "-i", "--no-sandbox"],
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
                 cwd=ws_workspace,
-                bufsize=0,
-                env=sandbox_env
+                env={
+                    **os.environ,
+                    "GARUDA_CONFIG": config_path,
+                    "GARUDA_SANDBOX_CHILD": "1",
+                    "TERM": "xterm-256color",
+                },
+                start_new_session=True,
             )
         except FileNotFoundError:
+            os.close(master_fd)
+            os.close(slave_fd)
             shutil.rmtree(workspace_dir, ignore_errors=True)
             return {"error": f"garuda not found at '{garuda_path}'. Make sure it's installed and in PATH."}
         except Exception as e:
+            os.close(master_fd)
+            os.close(slave_fd)
             shutil.rmtree(workspace_dir, ignore_errors=True)
             return {"error": f"Failed to start garuda: {e}"}
 
+        # Close slave fd in parent – only master_fd is kept for I/O
+        os.close(slave_fd)
         si.garuda_process = proc
+        si.pty_master_fd = master_fd
 
         # Start reader thread
         reader = threading.Thread(target=_reader_worker, args=(si,), daemon=True)
@@ -270,38 +284,33 @@ path = "{ws_workspace}"
         try:
             si.wait_for_prompt_in_buffer(timeout=timeout)
         except TimeoutError as e:
+            si.reader_running = False
             proc.terminate()
             try:
                 proc.wait(timeout=3)
             except Exception:
                 proc.kill()
-            reader_thread_running = si.reader_running
-            si.reader_running = False
+            os.close(master_fd)
+            si.pty_master_fd = None
             shutil.rmtree(workspace_dir, ignore_errors=True)
             return {"error": f"Garuda did not start within {timeout}s: {e}"}
 
         # Create tmux session with bash window
         tmux_session = si.tmux_session
         try:
-            # Create detached session
             subprocess.run(
                 ["tmux", "new-session", "-d", "-s", tmux_session, "-n", "workspace"],
                 capture_output=True, timeout=5, check=True
             )
-            # Name the session
             subprocess.run(
                 ["tmux", "send-keys", "-t", f"{tmux_session}:0", f"cd {ws_workspace} && clear", "Enter"],
                 capture_output=True, timeout=5
             )
-            # Also start a bash login shell
             subprocess.run(
                 ["tmux", "send-keys", "-t", f"{tmux_session}:0", "PS1='\\w \\$ '", "Enter"],
                 capture_output=True, timeout=5
             )
-        except subprocess.CalledProcessError as e:
-            # tmux not available - workspace mode only via pipe exec
-            pass
-        except FileNotFoundError:
+        except (subprocess.CalledProcessError, FileNotFoundError):
             pass
 
         _sandboxes[name] = si
@@ -318,28 +327,30 @@ path = "{ws_workspace}"
 
 
 def _send_to_sandbox(name: str, text: str, async_mode: bool = False, timeout: float = 120.0) -> Dict:
-    """Send text to garuda REPL via pipe. Supports sync and async."""
+    """Send text to garuda REPL via PTY master fd. Supports sync and async."""
     with _sandboxes_lock:
         si = _sandboxes.get(name)
     if not si:
         return {"error": f"Sandbox '{name}' not found. Use 'sandbox start {name}' first."}
     if si.garuda_process is None or si.garuda_process.poll() is not None:
         return {"error": f"Garuda process in sandbox '{name}' is not running. Start it first."}
+    if si.pty_master_fd is None:
+        return {"error": "PTY master fd is not available"}
 
-    proc = si.garuda_process
+    master_fd = si.pty_master_fd
+
+    # Clear any stale buffer from previous operations
+    si.get_and_clear_buffer()
 
     if async_mode:
         # Async: write, fire-and-forget with event notification
         task_id = str(uuid.uuid4())[:8]
         try:
-            proc.stdin.write((text + "\n").encode("utf-8"))
-            proc.stdin.flush()
-        except BrokenPipeError:
-            return {"error": "Garuda process pipe is broken. The process may have exited."}
+            os.write(master_fd, (text + "\n").encode("utf-8"))
+        except OSError as e:
+            return {"error": f"Write to PTY failed: {e}"}
 
-        # Start background watcher
         def _async_watcher():
-            """Wait for response completion, then publish event."""
             try:
                 response = si.wait_for_prompt_in_buffer(timeout=timeout)
                 if HAS_GARUDA_EVENTS:
@@ -352,7 +363,6 @@ def _send_to_sandbox(name: str, text: str, async_mode: bool = False, timeout: fl
                         "result": response
                     })
                 else:
-                    # Fallback: store response for polling
                     with si._async_lock:
                         si._async_tasks[task_id] = {
                             "status": "completed",
@@ -405,10 +415,9 @@ def _send_to_sandbox(name: str, text: str, async_mode: bool = False, timeout: fl
     else:
         # Sync: write and wait for response
         try:
-            proc.stdin.write((text + "\n").encode("utf-8"))
-            proc.stdin.flush()
-        except BrokenPipeError:
-            return {"error": "Garuda process pipe is broken. The process may have exited."}
+            os.write(master_fd, (text + "\n").encode("utf-8"))
+        except OSError as e:
+            return {"error": f"Write to PTY failed: {e}"}
 
         try:
             response = si.wait_for_prompt_in_buffer(timeout=timeout)
