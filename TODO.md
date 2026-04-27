@@ -1,130 +1,73 @@
-# TODO for AITools Project
+# AITools 开发任务清单
 
-## Completed Features ✅
+## 当前优先级：修复股票模块
 
-### Markdown Module (Completed)
-- ✅ Created markdown module based on git module template
-- ✅ Implemented 8 core functions:
-  1. `read_markdown_file` - Read markdown files
-  2. `write_markdown_file` - Write markdown files
-  3. `parse_markdown` - Parse markdown structure
-  4. `convert_markdown_to_html` - Convert to HTML
-  5. `extract_toc_from_markdown` - Extract table of contents
-  6. `extract_code_blocks_from_markdown` - Extract code blocks
-  7. `merge_markdown_files` - Merge multiple markdown files
-  8. `validate_markdown_syntax` - Validate markdown syntax
-- ✅ Split into multiple files (all under 1000 lines):
-  - `markdown_base.py` - Base definitions and helpers
-  - `markdown_io.py` - File I/O operations
-  - `markdown_parse.py` - Parsing and HTML conversion
-  - `markdown_extract.py` - Extraction functions
-  - `markdown_merge.py` - Merge functionality
-  - `markdown_validation.py` - Validation functionality
-  - `markdown.py` - Main module interface
-- ✅ All functions tested and working
+### 问题描述
+`get_all_china_stocks` 函数没有获取真正的所有中国股票数据，只返回示例数据。
 
-### Markdown Module Integration (Completed)
-- ✅ Added `tools` and `TOOL_CALL_MAP` definitions to markdown.py
-- ✅ Updated markdown/__init__.py to export tools and TOOL_CALL_MAP
-- ✅ Integrated markdown module into main.py load_manual_imports()
-- ✅ Verified all 8 markdown tools are loaded (157 total tools)
-- ✅ Created integration tests confirming functionality
-- ✅ No additional dependencies needed (uses only Python stdlib)
+### 需求
+1. 实现真正的中国股票列表获取功能（所有A股：上海主板、深圳主板、创业板、科创板）
+2. 支持多种数据源：tushare、sina、tencent等
+3. 哪个数据源可用就使用哪个作为默认
 
-## Next Atomic Features 🚀
+### 技术要求
+- 需要能够获取完整的中国股票列表（约4000+只股票）
+- 支持市场筛选：上海（sh）、深圳（sz）、全部（all）
+- 支持数据源选择：tushare、sina、tencent
 
-### Phase 1: Module Improvements (Priority)
+### 解决方案设计
+1. **数据源优先级**：
+   - tushare（需token，最完整）
+   - 东方财富（免费，数据完整）
+   - 新浪财经（免费，但可能有限制）
+   - 腾讯财经（免费）
 
-1. **Add markdown to PDF conversion**
-   - Create `markdown_to_pdf` function
-   - Support styling options
-   - Include table of contents generation
-   - Add page numbering and headers/footers
+2. **实现方案**：
+   - 检查tushare是否可用（有token且能连接）
+   - 如果不可用，尝试东方财富接口
+   - 如果还不可用，使用示例数据但有明确提示
 
-2. **Enhance markdown parsing with advanced features**
-   - Add support for tables (proper parsing)
-   - Add support for footnotes
-   - Add support for definition lists
-   - Add support for task lists
+3. **数据格式**：
+   ```
+   [
+     {
+       "symbol": "sh603060",
+       "name": "国检集团",
+       "code": "603060",
+       "market": "SH",
+       "type": "stock",
+       "area": "北京",
+       "industry": "检测认证",
+       "list_date": "20161013"
+     },
+     ...
+   ]
+   ```
 
-3. **Add markdown template system**
-   - Create template engine for markdown
-   - Support variables and conditionals
-   - Add includes/partials support
+### 具体实现步骤
+1. 实现东方财富数据源（免费且稳定）
+2. 实现数据源检测和自动选择
+3. 更新默认数据源逻辑
+4. 添加错误处理和回退机制
 
-### Phase 2: New Modules Development
+### 任务清单
+- [ ] 调研可用的免费股票列表API
+- [ ] 实现东方财富股票列表接口
+- [ ] 更新get_all_china_stocks函数
+- [ ] 添加数据源自动检测和选择
+- [ ] 测试各种情况
+- [ ] 更新文档
 
-4. **Create CSV module** (similar to markdown module)
-   - Read/write CSV files
-   - Parse CSV data
-   - Convert to/from JSON
-   - Filter and sort operations
-   - CSV validation
-
-5. **Create JSON module** (similar to markdown module)
-   - Read/write JSON files
-   - Validate JSON syntax
-   - Pretty formatting
-   - JSON schema validation
-   - JSON merge and diff operations
-
-6. **Create YAML module** (similar to markdown module)
-   - Read/write YAML files
-   - Validate YAML syntax
-   - Convert to/from JSON
-   - YAML schema validation
-
-### Phase 3: Integration Features
-
-7. **Add markdown to documentation generator**
-   - Generate API documentation from markdown
-   - Create navigation menus
-   - Support search functionality
-   - Generate PDF/HTML output
-
-8. **Add markdown blog system**
-   - Create blog post templates
-   - Generate RSS feeds
-   - Add tag/category support
-   - Create archive pages
-
-## Technical Debt & Improvements
-
-### Code Quality
-- [ ] Add comprehensive unit tests for all modules
-- [ ] Add integration tests
-- [ ] Add type hints coverage
-- [ ] Add documentation strings for all functions
-
-### Performance
-- [ ] Optimize markdown parsing for large files
-- [ ] Add caching for frequently accessed files
-- [ ] Implement streaming for large markdown files
-
-### Security
-- [ ] Add input validation and sanitization
-- [ ] Prevent path traversal attacks
-- [ ] Validate file sizes before processing
-
-## Notes
-
-- Each feature should be atomic and completable
-- Keep files under 1000 lines
-- Follow git module structure as template
-- Use `optimize_feature_context` after each feature
-- Update TODO.md after feature completion
-
-## Current Priority
-
-**Next atomic feature:** Add markdown to PDF conversion function
-
-This feature is:
-1. Atomic and completable
-2. Builds on existing markdown module
-3. Adds significant value
-4. Follows the module pattern
+### 测试用例
+1. 获取所有中国股票（验证数量）
+2. 按市场筛选（sh/sz）
+3. 测试不同数据源
+4. 错误处理和回退
 
 ---
 
-*Last updated: 2026-02-02*
-*Next feature: markdown to PDF conversion*
+## 其他待办事项
+- [ ] 完善股票历史数据功能
+- [ ] 添加股票基本面数据
+- [ ] 优化网络请求处理
+- [ ] 添加数据缓存机制

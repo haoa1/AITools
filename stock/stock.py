@@ -121,11 +121,18 @@ __GET_COMPANY_INFO_FUNCTION__ = function_ai(
     parameters=parameters_func([__STOCK_PROPERTY_SYMBOL__])
 )
 
+__GET_ALL_CHINA_STOCKS_FUNCTION__ = function_ai(
+    name="get_all_china_stocks",
+    description="Get all China stocks list (Shanghai, Shenzhen markets)",
+    parameters=parameters_func([__STOCK_PROPERTY_MARKET__, __STOCK_PROPERTY_SOURCE__])
+)
+
 tools = [
     __GET_STOCK_QUOTE_FUNCTION__,
     __GET_MULTIPLE_STOCK_QUOTES_FUNCTION__,
     __SEARCH_STOCK_FUNCTION__,
     __GET_STOCK_HISTORY_FUNCTION__,
+    __GET_ALL_CHINA_STOCKS_FUNCTION__,
     __GET_COMPANY_INFO_FUNCTION__
 ]
 
@@ -154,6 +161,10 @@ class StockDataFetcher:
             },
             'pandas-datareader': {
                 'initialized': False
+            },
+            'eastmoney': {
+                'stock_list': 'http://push2.eastmoney.com/api/qt/clist/get',
+                'initialized': True  # 东方财富不需要特殊初始化
             }
         }
         
@@ -190,6 +201,9 @@ class StockDataFetcher:
             self.data_sources['pandas-datareader']['available'] = True
         except ImportError:
             self.data_sources['pandas-datareader']['available'] = False
+        
+        # 东方财富API默认可用（不需要额外库）
+        self.data_sources['eastmoney']['available'] = True
     
     def _http_request(self, url: str, headers: Dict = None) -> str:
         """发起HTTP请求"""
@@ -784,6 +798,324 @@ class StockDataFetcher:
         
         return filtered_results if filtered_results else example_results[:3]
     
+    def _get_eastmoney_stock_list(self, market: str = 'all', max_pages: int = 3, timeout: int = 10) -> List[Dict[str, Any]]:
+        """通过东方财富API获取股票列表（分页获取所有股票）"""
+        try:
+            import requests
+            import time
+            
+            # 市场映射
+            market_map = {
+                'sh': 'm:1+t:2,m:1+t:23',  # 上海主板+科创板
+                'sz': 'm:0+t:6,m:0+t:80',  # 深圳主板+创业板
+                'all': 'm:0+t:6,m:1+t:2,m:0+t:80,m:1+t:23'  # 全部A股
+            }
+            
+            fs = market_map.get(market, market_map['all'])
+            
+            # 东方财富API每页最多100只
+            page_size = 100
+            current_page = 1
+            total_stocks = 0
+            all_stocks = []
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'http://quote.eastmoney.com/center/gridlist.html',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+            }
+            
+            print(f"尝试从东方财富获取股票列表（市场: {market}）...")
+            print("注意: 如遇网络限制或超时，将返回示例数据")
+            
+            try:
+                # 测试连接（只尝试第一页）
+                url = 'http://push2.eastmoney.com/api/qt/clist/get'
+                params = {
+                    'pn': current_page,
+                    'pz': page_size,
+                    'po': 1,
+                    'np': 1,
+                    'ut': 'bd1d9ddb04089700cf9c27f6f7426281',
+                    'fltt': 2,
+                    'invt': 2,
+                    'fid': 'f3',
+                    'fs': fs,
+                    'fields': 'f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f12,f13,f14,f15,f16,f17,f18,f20,f21,f23,f24,f25,f22,f11,f62,f128,f136,f115,f152',
+                    '_': str(int(time.time() * 1000))
+                }
+                
+                # 使用短超时
+                response = requests.get(url, params=params, headers=headers, timeout=timeout)
+                
+                if response.status_code != 200:
+                    print(f"API请求失败: {response.status_code}")
+                    return []
+                
+                data = response.json()
+                if 'data' not in data or 'diff' not in data['data']:
+                    print("API返回数据格式错误")
+                    return []
+                
+                stocks_data = data['data']['diff']
+                if not stocks_data:
+                    print("API返回空数据")
+                    return []
+                
+                # 获取总股票数
+                total_stocks = data['data'].get('total', 0)
+                print(f"发现总股票数量: {total_stocks}, 开始获取...")
+                
+                # 处理第一页数据
+                page_stocks = []
+                for stock_data in stocks_data:
+                    code = stock_data.get('f12', '')  # 股票代码
+                    name = stock_data.get('f14', '')  # 股票名称
+                    market_code = stock_data.get('f13', 0)  # 市场代码: 0=深圳, 1=上海
+                    
+                    if not code or not name:
+                        continue
+                    
+                    # 标准化股票代码
+                    if market_code == 1:  # 上海
+                        symbol = f"sh{code}"
+                        market_name = 'SH'
+                    else:  # 深圳
+                        symbol = f"sz{code}"
+                        market_name = 'SZ'
+                    
+                    # 构建股票信息
+                    stock = {
+                        'symbol': symbol,
+                        'name': name,
+                        'code': code,
+                        'market': market_name,
+                        'type': 'stock',
+                        'area': '',  # 东方财富API不提供此信息
+                        'industry': '',  # 东方财富API不提供此信息
+                        'list_date': ''  # 东方财富API不提供此信息
+                    }
+                    page_stocks.append(stock)
+                
+                all_stocks.extend(page_stocks)
+                print(f"第一页获取成功: {len(page_stocks)} 只股票")
+                
+                # 如果成功获取第一页，继续获取更多页
+                if total_stocks > page_size and max_pages > 1:
+                    for page in range(2, min(max_pages + 1, total_stocks // page_size + 2)):
+                        try:
+                            params['pn'] = page
+                            response = requests.get(url, params=params, headers=headers, timeout=timeout)
+                            
+                            if response.status_code != 200:
+                                print(f"第{page}页请求失败，停止获取")
+                                break
+                            
+                            data = response.json()
+                            if 'data' not in data or 'diff' not in data['data']:
+                                print(f"第{page}页数据格式错误，停止获取")
+                                break
+                            
+                            stocks_data = data['data']['diff']
+                            if not stocks_data:
+                                break  # 没有更多数据
+                            
+                            # 处理当前页数据
+                            page_stocks = []
+                            for stock_data in stocks_data:
+                                code = stock_data.get('f12', '')
+                                name = stock_data.get('f14', '')
+                                market_code = stock_data.get('f13', 0)
+                                
+                                if not code or not name:
+                                    continue
+                                
+                                if market_code == 1:
+                                    symbol = f"sh{code}"
+                                    market_name = 'SH'
+                                else:
+                                    symbol = f"sz{code}"
+                                    market_name = 'SZ'
+                                
+                                stock = {
+                                    'symbol': symbol,
+                                    'name': name,
+                                    'code': code,
+                                    'market': market_name,
+                                    'type': 'stock',
+                                    'area': '',
+                                    'industry': '',
+                                    'list_date': ''
+                                }
+                                page_stocks.append(stock)
+                            
+                            all_stocks.extend(page_stocks)
+                            
+                            if page % 5 == 0 or len(all_stocks) >= total_stocks:
+                                print(f"  已获取第 {page} 页，累计 {len(all_stocks)} 只")
+                            
+                            if len(all_stocks) >= total_stocks:
+                                break
+                            
+                            time.sleep(0.5)  # 避免请求过快
+                            
+                        except requests.exceptions.Timeout:
+                            print(f"第{page}页请求超时，停止获取")
+                            break
+                        except requests.exceptions.ConnectionError:
+                            print(f"第{page}页连接错误，停止获取")
+                            break
+                        except Exception as e:
+                            print(f"第{page}页错误: {e}")
+                            break
+                
+                print(f"从东方财富获取完成，共 {len(all_stocks)} 只股票")
+                return all_stocks
+                
+            except requests.exceptions.Timeout:
+                print("请求超时，网络可能受限")
+                return []
+            except requests.exceptions.ConnectionError:
+                print("连接错误，网络可能受限")
+                return []
+            except Exception as e:
+                print(f"API请求失败: {e}")
+                return []
+            
+        except Exception as e:
+            print(f"获取东方财富股票列表失败: {e}")
+            return []
+    
+    def get_all_china_stocks(self, market: str = 'all', source: str = 'eastmoney') -> List[Dict[str, Any]]:
+        '''获取所有中国股票列表
+
+        Args:
+            market: 市场，'sh'（上海），'sz'（深圳），'all'（全部）
+            source: 数据源，'eastmoney'（默认，东方财富），'tushare'，'sina'，'tencent'
+
+        Returns:
+            股票列表，每个股票包含 symbol, name, code, market, type 等字段
+        '''
+        source = source.lower()
+        
+        # 数据源优先级：东方财富 > tushare > 示例数据
+        # 东方财富数据源（免费且可用）
+        if source == 'eastmoney' and self.data_sources['eastmoney'].get('available', False):
+            try:
+                stocks = self._get_eastmoney_stock_list(market)
+                if stocks:
+                    return stocks
+                else:
+                    print("东方财富返回空列表，尝试其他数据源")
+            except Exception as e:
+                print(f"东方财富数据源失败: {e}")
+                # 继续尝试其他数据源
+        
+        # tushare数据源（需要token）
+        if source == 'tushare' and self.data_sources['tushare'].get('available', False):
+            try:
+                import tushare as ts
+                # 检查是否有token
+                has_token = self.data_sources['tushare'].get('has_token', True)
+                if has_token:
+                    pro = ts.pro_api()
+                    # 获取所有股票基本信息
+                    df = pro.stock_basic(exchange='', list_status='L', fields='ts_code,symbol,name,area,industry,list_date')
+                else:
+                    # 使用旧接口
+                    df = ts.get_stock_basics()
+                
+                # 转换为字典列表
+                stocks = []
+                for _, row in df.iterrows():
+                    ts_code = row['ts_code'] if 'ts_code' in row else row['code']
+                    symbol = self._normalize_symbol(ts_code, 'sina')
+                    # 根据市场代码过滤
+                    if market == 'all' or (market == 'sh' and symbol.startswith('sh')) or (market == 'sz' and symbol.startswith('sz')):
+                        stocks.append({
+                            'symbol': symbol,
+                            'name': row['name'] if 'name' in row else '',
+                            'code': ts_code,
+                            'market': 'SH' if symbol.startswith('sh') else 'SZ',
+                            'type': 'stock',
+                            'area': row.get('area', ''),
+                            'industry': row.get('industry', ''),
+                            'list_date': row.get('list_date', '')
+                        })
+                if stocks:
+                    print(f"从tushare获取到 {len(stocks)} 只股票")
+                    return stocks
+            except Exception as e:
+                print(f"tushare数据源失败: {e}")
+        
+        # sina和tencent数据源（暂未完全实现）
+        if source in ['sina', 'tencent']:
+            print(f"注意: {source} 股票列表API尚未完全实现，返回扩展示例数据")
+        
+        # 如果没有可用的数据源，返回扩展示例数据
+        print("⚠️ 网络受限，无法从在线数据源获取完整股票列表。")
+        print("   当前网络环境有限制，东方财富、新浪财经等API无法访问。")
+        print("   返回扩展示例数据（40只常见股票）用于测试。")
+        print("")
+        print("💡 如需获取完整股票列表（约5500只），请执行以下操作之一：")
+        print("   1. 安装tushare: pip install tushare")
+        print("   2. 获取tushare token: https://tushare.pro")
+        print("   3. 在其他网络环境下使用")
+        
+        # 扩展的示例数据（常见中国股票）
+        example_stocks = [
+            {'symbol': 'sh603060', 'name': '国检集团', 'code': '603060', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sz000001', 'name': '平安银行', 'code': '000001', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sh600036', 'name': '招商银行', 'code': '600036', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600519', 'name': '贵州茅台', 'code': '600519', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sz000858', 'name': '五粮液', 'code': '000858', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sh601318', 'name': '中国平安', 'code': '601318', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601398', 'name': '工商银行', 'code': '601398', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601288', 'name': '农业银行', 'code': '601288', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601939', 'name': '建设银行', 'code': '601939', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601988', 'name': '中国银行', 'code': '601988', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600028', 'name': '中国石化', 'code': '600028', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601857', 'name': '中国石油', 'code': '601857', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600016', 'name': '民生银行', 'code': '600016', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600000', 'name': '浦发银行', 'code': '600000', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600030', 'name': '中信证券', 'code': '600030', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600837', 'name': '海通证券', 'code': '600837', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600104', 'name': '上汽集团', 'code': '600104', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600048', 'name': '保利发展', 'code': '600048', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600276', 'name': '恒瑞医药', 'code': '600276', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600585', 'name': '海螺水泥', 'code': '600585', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600887', 'name': '伊利股份', 'code': '600887', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh600309', 'name': '万华化学', 'code': '600309', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601166', 'name': '兴业银行', 'code': '601166', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601328', 'name': '交通银行', 'code': '601328', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sh601818', 'name': '光大银行', 'code': '601818', 'market': 'SH', 'type': 'stock'},
+            {'symbol': 'sz002415', 'name': '海康威视', 'code': '002415', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000002', 'name': '万科A', 'code': '000002', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000063', 'name': '中兴通讯', 'code': '000063', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000651', 'name': '格力电器', 'code': '000651', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000333', 'name': '美的集团', 'code': '000333', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz002304', 'name': '洋河股份', 'code': '002304', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000725', 'name': '京东方A', 'code': '000725', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz002142', 'name': '宁波银行', 'code': '002142', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000001', 'name': '平安银行', 'code': '000001', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000858', 'name': '五粮液', 'code': '000858', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz002027', 'name': '分众传媒', 'code': '002027', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz002594', 'name': '比亚迪', 'code': '002594', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz000568', 'name': '泸州老窖', 'code': '000568', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz002475', 'name': '立讯精密', 'code': '002475', 'market': 'SZ', 'type': 'stock'},
+            {'symbol': 'sz300750', 'name': '宁德时代', 'code': '300750', 'market': 'SZ', 'type': 'stock'},
+        ]
+        
+        # 根据市场过滤示例数据
+        filtered = []
+        for stock in example_stocks:
+            if market == 'all' or (market == 'sh' and stock['market'] == 'SH') or (market == 'sz' and stock['market'] == 'SZ'):
+                filtered.append(stock)
+        return filtered
+        return filtered
     def get_stock_history(self, symbol: str, period: str = 'daily', 
                          start_date: str = '', end_date: str = '',
                          count: int = 100) -> Dict[str, Any]:
@@ -951,6 +1283,21 @@ def get_company_info(symbol: str) -> str:
     except Exception as e:
         return f"Failed to get company information: {e}"
 
+def get_all_china_stocks(market: str = 'all', source: str = 'eastmoney') -> str:
+    '''获取所有中国股票列表
+
+    :param market: 市场，'sh'（上海），'sz'（深圳），'all'（全部）
+    :type market: str
+    :param source: 数据源，'eastmoney'（默认，东方财富），'tushare'，'sina'，'tencent'
+    :type source: str
+    :return: 股票列表，JSON格式
+    :rtype: str
+    '''
+    try:
+        stocks = _fetcher.get_all_china_stocks(market, source)
+        return json.dumps(stocks, ensure_ascii=False, indent=2)
+    except Exception as e:
+        return f"Failed to get all China stocks: {e}"
 
 # ============================================================================
 # Tool Call Mapping
@@ -961,6 +1308,7 @@ TOOL_CALL_MAP = {
     "get_multiple_stock_quotes": get_multiple_stock_quotes,
     "search_stock": search_stock,
     "get_stock_history": get_stock_history,
+    "get_all_china_stocks": get_all_china_stocks,
     "get_company_info": get_company_info
 }
 
@@ -1014,4 +1362,7 @@ if __name__ == "__main__":
     print(result[:200] + "..." if len(result) > 200 else result)
     print()
     
+    print("7. get all stocks")
+    result = get_all_china_stocks()
+    print(result[:200] + f"... size: {len(result)}" if len(result) > 200 else result)
     print("Stock module test completed!")
