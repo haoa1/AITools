@@ -72,8 +72,12 @@ def glob(pattern: str, path: str = None) -> str:
                 "success": False
             }, indent=2)
         
-        # Determine search directory
+        # Expand ~ in pattern if present
+        pattern = os.path.expanduser(pattern)
+        
+        # Determine search directory and expand ~ if present
         search_dir = path or os.getcwd()
+        search_dir = os.path.expanduser(search_dir)
         
         # Validate directory exists
         if not os.path.exists(search_dir):
