@@ -540,6 +540,18 @@ def _exec_in_workspace(name: str, cmd: str, timeout: float = 30.0) -> Dict:
     return {"success": True, "output": output[:2000], "name": name}
 
 
+def _get_buffer(name: str) -> Dict:
+    """获取 PTY 缓冲区的完整输出（日志）"""
+    with _sandboxes_lock:
+        si = _sandboxes.get(name)
+    if not si:
+        return {"error": f"沙箱 '{name}' 不存在"}
+    buf = si.get_buffer()
+    if not buf:
+        return {"success": True, "output": "", "message": "缓冲区为空"}
+    return {"success": True, "output": buf[-10000:], "size": len(buf), "name": name}
+
+
 def _capture_pane(name: str, window: int = 0) -> Dict:
     """捕获 tmux pane 输出（不变）"""
     with _sandboxes_lock:
@@ -656,8 +668,11 @@ def sandbox_handler(sub_cmd: str, name: str = "", **kwargs) -> str:
                 return json.dumps({"error": "缺少 'input' 参数"})
             timeout = float(kwargs.get("timeout", 120.0))
             prompt = kwargs.get("prompt", None)
-            async_mode = kwargs.get("async", False)
+            async_mode = kwargs.get("async", True)  # 默认异步
             result = _send_to_sandbox(name, text, timeout, prompt, async_mode)
+
+        elif sub_cmd == "buffer":
+            result = _get_buffer(name)
 
         elif sub_cmd == "exec":
             cmd = kwargs.get("cmd", "")
@@ -686,7 +701,7 @@ def sandbox_handler(sub_cmd: str, name: str = "", **kwargs) -> str:
         else:
             result = {
                 "error": f"未知命令 '{sub_cmd}'. "
-                f"支持: start, send, exec, capture, list, check, stop"
+                f"支持: start, send, exec, capture, buffer, list, check, stop"
             }
 
         return json.dumps(result, ensure_ascii=False, default=str)
@@ -707,7 +722,7 @@ def sandbox_handler(sub_cmd: str, name: str = "", **kwargs) -> str:
 
 _prop_sub_cmd = property_param(
     name="sub_cmd",
-    description="Sub-command: 'start' (create sandbox with app), 'send' (send to app via PTY), 'exec' (bash in workspace), 'capture' (capture pane), 'list' (list all), 'check' (check async task), 'stop' (destroy)",
+    description="Sub-command: 'start' (create sandbox with app), 'send' (send to app via PTY), 'exec' (bash in workspace), 'capture' (capture pane), 'buffer' (show PTY logs), 'list' (list all), 'check' (check async task), 'stop' (destroy)",
     t="string",
     required=True
 )
@@ -781,18 +796,21 @@ _sandbox_function = function_ai(
 
     Architecture:
       - start <cmd>  → Launches ANY interactive app in a PTY (not just Garuda)
-      - send <input>  → Writes to the app's PTY, waits for prompt response
+      - send <input>  → Writes to the app's PTY (async by default), notifies on completion
       - exec <cmd>    → Runs bash in tmux workspace (independent channel)
+      - buffer        → Shows PTY accumulated output (logs)
       
     Dual-mode: send (PTY interaction with app) + exec (bash via tmux).
-    Async mode: send(async=True) returns immediately with task_id, notifies on completion.
+    Async by default: send returns immediately with task_id, notifies on completion.
+    Buffer: buffer command shows full PTY output history (last 10K chars).
     Check mode: check(task_id) queries async task status.
     
     Sub-commands:
     - 'start': Create sandbox with given cmd (default: garuda). Set prompt for custom apps.
-    - 'send': Send message to sandboxed app via PTY, wait for response.
+    - 'send': Send message to sandboxed app via PTY (async by default).
     - 'exec': Run bash command in workspace tmux window.
     - 'capture': Capture output from a tmux pane.
+    - 'buffer': Show PTY accumulated output (logs).
     - 'list': List all active sandboxes.
     - 'check': Check status of an async task (from send/start async mode).
     - 'stop': Stop and optionally clean up a sandbox.""",
