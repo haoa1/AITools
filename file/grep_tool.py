@@ -62,7 +62,7 @@ __OUTPUT_MODE_PROPERTY__ = property_param(
 
 # -B: 上下文前几行
 __B_CONTEXT_PROPERTY__ = property_param(
-    name="-B",
+    name="B",
     description="Number of lines to show before each match. Requires output_mode: 'content'.",
     t="number",
     required=False,
@@ -70,7 +70,7 @@ __B_CONTEXT_PROPERTY__ = property_param(
 
 # -A: 上下文后几行
 __A_CONTEXT_PROPERTY__ = property_param(
-    name="-A",
+    name="A",
     description="Number of lines to show after each match. Requires output_mode: 'content'.",
     t="number",
     required=False,
@@ -86,7 +86,7 @@ __CONTEXT_PROPERTY__ = property_param(
 
 # -n: 显示行号
 __N_LINE_NUM_PROPERTY__ = property_param(
-    name="-n",
+    name="n",
     description="Show line numbers in output. Requires output_mode: 'content'. Defaults to true.",
     t="boolean",
     required=False,
@@ -94,7 +94,7 @@ __N_LINE_NUM_PROPERTY__ = property_param(
 
 # -i: 大小写不敏感
 __I_CASE_INSENSITIVE_PROPERTY__ = property_param(
-    name="-i",
+    name="i",
     description="Case insensitive search",
     t="boolean",
     required=False,
@@ -361,11 +361,14 @@ def grep(
     else:
         # 目录：递归搜索所有文件
         for root, dirs, filenames in os.walk(search_path):
-            # 排除一些常见目录（简化版本）
-            if '.git' in dirs:
-                dirs.remove('.git')
-            if '__pycache__' in dirs:
-                dirs.remove('__pycache__')
+            # 排除常见目录
+            _skip_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv',
+                          '.tox', '.egg-info', 'dist', 'build', '.next',
+                          '.nuxt', 'target', '.gitlab', '.svn', '.hg',
+                          '.DS_Store'}
+            for d in list(dirs):
+                if d in _skip_dirs:
+                    dirs.remove(d)
             
             for filename in filenames:
                 filepath = os.path.join(root, filename)
