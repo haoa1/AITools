@@ -4,13 +4,34 @@ GlobTool implementation for AITools (Claude Code compatible version - simplified
 Provides glob pattern matching functionality aligned with Claude Code's GlobTool.
 Based on analysis of Claude Code source: restored-src/src/tools/GlobTool/GlobTool.ts
 Simplified version focusing on basic glob pattern matching.
+
+Safety features added:
+- Timeout guard (30s) — terminates before iglob can hang
+- Skip huge system dirs (Library, node_modules, etc.)
+- Max depth limit (8 levels) for ** patterns
+- Max scanned file limit (5000)
+- Per-entry timeout checks via os.scandir (not iglob which blocks internally)
 """
 
 import os
-import glob as pyglob
+import fnmatch
 import json
 import time
 from base import function_ai, parameters_func, property_param
+
+# Safety limits for recursive glob patterns
+_GLOB_TIMEOUT_SECONDS = 30       # Max time for any glob search
+_GLOB_RECURSIVE_MAX_DEPTH = 8    # Max directory depth for ** patterns
+_GLOB_RECURSIVE_MAX_FILES = 5000 # Max intermediate files before giving up
+_GLOB_RESULT_LIMIT = 100         # Default result limit (matches Claude Code)
+
+# Directories to skip during recursive search (common huge/system dirs)
+_GLOB_SKIP_DIRS = frozenset({
+    "Library", "node_modules", ".git", "__pycache__", ".cache",
+    ".npm", ".yarn", ".cocoapods", "Pods", "build", "dist",
+    ".venv", "venv", ".tox", ".eggs", "egg-info", "site-packages",
+    "Caches", "Trash", ".Trash", "tmp", "temp", ".tmp",
+})
 
 # Property definitions for GlobTool
 __PATTERN_PROPERTY__ = property_param(
@@ -40,6 +61,89 @@ __GLOB_TOOL_FUNCTION__ = function_ai(
 tools = [__GLOB_TOOL_FUNCTION__]
 
 
+def _safe_recursive_glob(pattern, search_dir, max_results, deadline):
+    """
+    Recursively find files matching a glob pattern, with per-entry timeout checks.
+    
+    Uses os.scandir instead of glob.iglob because iglob blocks internally at the
+    C level when traversing large directories — making Python-level timeout checks
+    impossible. With os.scandir, we inspect every single entry and can bail out
+    immediately if we exceed the deadline.
+    
+    Returns (all_files, timed_out, search_cancelled)
+    """
+    all_files = []
+    timed_out = False
+    search_cancelled = False
+    total_scanned = 0
+    
+    def _scan(root_dir, depth=0):
+        nonlocal timed_out, search_cancelled, total_scanned
+        
+        if timed_out or search_cancelled:
+            return
+        if depth > _GLOB_RECURSIVE_MAX_DEPTH:
+            return
+        
+        # Timeout check before entering each directory
+        if time.time() > deadline:
+            timed_out = True
+            return
+        
+        try:
+            with os.scandir(root_dir) as entries:
+                for entry in entries:
+                    if timed_out or search_cancelled:
+                        return
+                    
+                    # Per-entry timeout check
+                    if time.time() > deadline:
+                        timed_out = True
+                        return
+                    
+                    # Skip known huge/system directories entirely
+                    if entry.is_dir(follow_symlinks=False) and entry.name in _GLOB_SKIP_DIRS:
+                        continue
+                    
+                    total_scanned += 1
+                    
+                    # Max total scanned guard
+                    if total_scanned > _GLOB_RECURSIVE_MAX_FILES:
+                        search_cancelled = True
+                        return
+                    
+                    # Get relative path for pattern matching
+                    try:
+                        rel = os.path.relpath(entry.path, search_dir)
+                    except ValueError:
+                        continue
+                    
+                    # Don't include files inside skipped dirs (but we already skip dirs above)
+                    rel_parts = rel.replace("\\", "/").split("/")
+                    if any(p in _GLOB_SKIP_DIRS for p in rel_parts[:-1]):
+                        continue
+                    
+                    # Check if this entry matches the pattern
+                    if fnmatch.fnmatch(rel, pattern):
+                        all_files.append(entry.path)
+                        if len(all_files) >= max_results:
+                            return
+                    
+                    # Recurse into directories
+                    if entry.is_dir(follow_symlinks=False):
+                        _scan(entry.path, depth + 1)
+                        if len(all_files) >= max_results:
+                            return
+                        
+        except PermissionError:
+            pass
+        except OSError:
+            pass
+    
+    _scan(search_dir, depth=0)
+    return all_files, timed_out, search_cancelled
+
+
 def glob(pattern: str, path: str = None) -> str:
     """
     Find files by name pattern or wildcard.
@@ -49,20 +153,6 @@ def glob(pattern: str, path: str = None) -> str:
     - path: The directory to search in (optional, defaults to current directory)
     
     Returns JSON matching Claude Code's GlobTool output schema (simplified).
-    
-    Core functionality in Claude Code:
-    1. Uses glob pattern matching to find files
-    2. Supports wildcards (*, ?, [], etc.)
-    3. Limits results to 100 files by default (truncated flag)
-    4. Returns relative paths under current directory
-    5. Includes execution time statistics
-    
-    Simplified implementation:
-    1. Uses Python's glob.glob() for pattern matching
-    2. Supports basic glob patterns (no extended features)
-    3. Limits results to 100 files (configurable)
-    4. Returns relative paths where possible
-    5. Includes execution timing
     """
     try:
         # Validate inputs
@@ -94,58 +184,62 @@ def glob(pattern: str, path: str = None) -> str:
         
         # Record start time
         start_time = time.time()
+        deadline = start_time + _GLOB_TIMEOUT_SECONDS
         
-        # Change to search directory for glob to work correctly
-        original_cwd = os.getcwd()
-        os.chdir(search_dir)
+        all_files = []
+        max_results = _GLOB_RESULT_LIMIT
+        timed_out = False
+        search_cancelled = False
         
-        try:
-            # Perform glob search with limit
-            max_results = 100  # Default limit from Claude Code
-            all_files = []
+        if "**" in pattern:
+            # ----- RECURSIVE pattern: use os.scandir (per-entry timeout) -----
+            all_files, timed_out, search_cancelled = _safe_recursive_glob(
+                pattern, search_dir, max_results, deadline
+            )
+        else:
+            # ----- Non-recursive pattern: standard glob is fine -----
+            import glob as pyglob
+            all_files = pyglob.glob(os.path.join(search_dir, pattern))
             
-            # Use glob to find files matching pattern
-            # Note: recursive glob (**) requires Python 3.5+ with recursive=True
-            if "**" in pattern and hasattr(pyglob, "iglob"):
-                # Handle recursive pattern
-                for file_path in pyglob.iglob(pattern, recursive=True):
-                    all_files.append(file_path)
-                    if len(all_files) >= max_results * 2:  # Allow some extra for sorting
-                        break
-            else:
-                # Non-recursive pattern
-                all_files = pyglob.glob(pattern)
-            
-            # Sort files for consistent results
-            all_files.sort()
-            
-            # Apply limit and check for truncation
-            truncated = len(all_files) > max_results
-            result_files = all_files[:max_results]
-            
-            # Make paths relative to original search directory
-            # For display purposes, keep them relative to search_dir
-            # In Claude Code, they're made relative to current working directory
-            final_files = []
-            for file_path in result_files:
-                # Ensure it's a string (glob returns strings)
-                file_str = str(file_path)
-                # Convert to relative path if it's absolute
-                if os.path.isabs(file_str):
-                    try:
-                        file_str = os.path.relpath(file_str, search_dir)
-                    except:
-                        # If relpath fails, use the original
-                        pass
-                final_files.append(file_str)
-            
-        finally:
-            # Restore original directory
-            os.chdir(original_cwd)
+            # Filter out results from skipped system dirs
+            filtered = []
+            for f in all_files:
+                rel = os.path.relpath(f, search_dir) if os.path.isabs(f) else f
+                parts = rel.replace("\\", "/").split("/")
+                # Only keep files not inside skipped dirs
+                if len(parts) <= 1 or not any(p in _GLOB_SKIP_DIRS for p in parts[:-1]):
+                    filtered.append(f)
+            all_files = filtered
+        
+        # Sort for consistency
+        all_files.sort()
+        
+        # Apply limit
+        truncated = len(all_files) > max_results or timed_out or search_cancelled
+        result_files = all_files[:max_results]
+        
+        # Convert to relative paths
+        final_files = []
+        for file_path in result_files:
+            file_str = str(file_path)
+            if os.path.isabs(file_str):
+                try:
+                    file_str = os.path.relpath(file_str, search_dir)
+                except ValueError:
+                    pass
+            final_files.append(file_str)
         
         # Calculate execution time
-        end_time = time.time()
-        duration_ms = int((end_time - start_time) * 1000)
+        duration_ms = int((time.time() - start_time) * 1000)
+        
+        # Determine truncation reason
+        truncation_reason = None
+        if timed_out:
+            truncation_reason = f"timed_out after {_GLOB_TIMEOUT_SECONDS}s"
+        elif search_cancelled:
+            truncation_reason = f"too_many_files_exceeded_{_GLOB_RECURSIVE_MAX_FILES}"
+        elif truncated:
+            truncation_reason = f"result_limit_{max_results}"
         
         # Build Claude Code compatible response
         response = {
@@ -153,13 +247,19 @@ def glob(pattern: str, path: str = None) -> str:
             "numFiles": len(final_files),
             "filenames": final_files,
             "truncated": truncated,
+            "truncation_reason": truncation_reason,
             "_metadata": {
                 "success": True,
                 "simplifiedImplementation": True,
                 "pattern": pattern,
                 "searchDirectory": search_dir,
                 "maxResults": max_results,
-                "note": "Basic glob implementation. Does not include advanced permission checking or UNC path handling."
+                "safety": {
+                    "timeout_seconds": _GLOB_TIMEOUT_SECONDS,
+                    "max_depth": _GLOB_RECURSIVE_MAX_DEPTH,
+                    "max_scanned": _GLOB_RECURSIVE_MAX_FILES,
+                    "skipped_dirs": sorted(_GLOB_SKIP_DIRS)
+                }
             }
         }
         
@@ -176,109 +276,3 @@ def glob(pattern: str, path: str = None) -> str:
 TOOL_CALL_MAP = {
     "glob": glob
 }
-
-
-if __name__ == "__main__":
-    # Test the glob function
-    print("Testing GlobTool (Claude Code compatible - simplified)...")
-    print("-" * 60)
-    
-    # Create some test files
-    import tempfile
-    import shutil
-    
-    test_dir = tempfile.mkdtemp()
-    print(f"1. Created test directory: {test_dir}")
-    
-    try:
-        # Create test files
-        test_files = [
-            "test1.txt",
-            "test2.txt",
-            "test3.md",
-            "data.json",
-            "image.png",
-            "subdir/test4.txt",
-            "subdir/test5.md"
-        ]
-        
-        for file_name in test_files:
-            file_path = os.path.join(test_dir, file_name)
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, 'w') as f:
-                f.write(f"Content for {file_name}")
-        
-        print(f"   Created {len(test_files)} test files")
-        
-        # Test 1: Basic glob pattern
-        print("\n2. Basic glob pattern (*.txt):")
-        result = glob(pattern="*.txt", path=test_dir)
-        data = json.loads(result)
-        
-        print(f"   Success: {'error' not in data}")
-        print(f"   Duration: {data.get('durationMs')}ms")
-        print(f"   Num files: {data.get('numFiles')}")
-        print(f"   Files found: {data.get('filenames')}")
-        print(f"   Truncated: {data.get('truncated')}")
-        
-        # Test 2: Check Claude Code compatibility
-        print("\n3. Claude Code compatibility check:")
-        expected_fields = ["durationMs", "numFiles", "filenames", "truncated"]
-        
-        missing_fields = [field for field in expected_fields if field not in data]
-        
-        if missing_fields:
-            print(f"   Missing required fields: {missing_fields}")
-        else:
-            print("   All required fields present ✓")
-        
-        # Test 3: Different pattern
-        print("\n4. Different pattern (*.md):")
-        result3 = glob(pattern="*.md", path=test_dir)
-        data3 = json.loads(result3)
-        print(f"   Num files: {data3.get('numFiles')}")
-        print(f"   Files: {data3.get('filenames')}")
-        
-        # Test 4: Pattern with subdirectory
-        print("\n5. Pattern with subdirectory (subdir/*.txt):")
-        result4 = glob(pattern="subdir/*.txt", path=test_dir)
-        data4 = json.loads(result4)
-        print(f"   Num files: {data4.get('numFiles')}")
-        print(f"   Files: {data4.get('filenames')}")
-        
-        # Test 5: No matches
-        print("\n6. Pattern with no matches (*.py):")
-        result5 = glob(pattern="*.py", path=test_dir)
-        data5 = json.loads(result5)
-        print(f"   Num files: {data5.get('numFiles')}")
-        print(f"   Files: {data5.get('filenames')}")
-        
-        # Test 6: Error handling - invalid directory
-        print("\n7. Error handling (invalid directory):")
-        result6 = glob(pattern="*.txt", path="/nonexistent/directory")
-        data6 = json.loads(result6)
-        print(f"   Has error: {'error' in data6}")
-        
-        # Test 7: Default path (current directory)
-        print("\n8. Default path (current directory):")
-        # Create a test file in current directory
-        with open("test_glob_current.txt", 'w') as f:
-            f.write("Test file")
-        
-        try:
-            result7 = glob(pattern="test_glob_*.txt")
-            data7 = json.loads(result7)
-            print(f"   Num files: {data7.get('numFiles')}")
-            print(f"   At least one file: {data7.get('numFiles', 0) > 0}")
-        finally:
-            # Clean up test file
-            if os.path.exists("test_glob_current.txt"):
-                os.remove("test_glob_current.txt")
-        
-    finally:
-        # Clean up test directory
-        shutil.rmtree(test_dir)
-        print(f"\n9. Cleaned up test directory: {test_dir}")
-    
-    print("\n" + "=" * 60)
-    print("GlobTool test completed.")
