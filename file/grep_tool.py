@@ -116,6 +116,14 @@ __OFFSET_PROPERTY__ = property_param(
     required=False,
 )
 
+# timeout: 超时秒数
+__TIMEOUT_PROPERTY__ = property_param(
+    name="timeout",
+    description="Max search time in seconds. Defaults to 30. Search will abort with partial results if exceeded.",
+    t="number",
+    required=False,
+)
+
 # ===== 工具函数定义 =====
 
 __GREP_FUNCTION__ = function_ai(
@@ -133,6 +141,7 @@ __GREP_FUNCTION__ = function_ai(
         __I_CASE_INSENSITIVE_PROPERTY__,
         __HEAD_LIMIT_PROPERTY__,
         __OFFSET_PROPERTY__,
+        __TIMEOUT_PROPERTY__,
     ]),
 )
 
@@ -290,6 +299,20 @@ def _format_match_display(match: GrepMatch, context_before: int = 0, context_aft
     
     return '\n'.join(result_lines)
 
+class _TimeoutError(Exception):
+    """Raised internally when search exceeds timeout."""
+    pass
+
+
+def _check_timeout(start_time: float, timeout_seconds: float, files_scanned: int):
+    """Check if search has exceeded timeout, raise _TimeoutError if so."""
+    if timeout_seconds <= 0:
+        return
+    elapsed = time.time() - start_time
+    if elapsed > timeout_seconds:
+        raise _TimeoutError(f"Search timed out after {elapsed:.1f}s (limit: {timeout_seconds}s), scanned {files_scanned} files")
+
+
 def grep(
     pattern: str,
     path: Optional[str] = None,
@@ -302,6 +325,7 @@ def grep(
     i: Optional[bool] = None,
     head_limit: Optional[int] = None,
     offset: Optional[int] = None,
+    timeout: Optional[int] = None,
 ) -> str:
     """
     在文件中搜索正则表达式模式（Claude Code GrepTool的简化版本）。
@@ -318,11 +342,13 @@ def grep(
         i: 是否大小写不敏感（默认False）
         head_limit: 输出限制（默认250）
         offset: 偏移量（默认0）
+        timeout: 搜索超时秒数（默认30，<=0表示无限制）
     
     返回:
         JSON格式的结果，与Claude Code GrepTool兼容
     """
     start_time = time.time()
+    timed_out = False
     
     # 参数处理
     search_path = path or "."
@@ -331,6 +357,7 @@ def grep(
     case_insensitive = i or False
     head_limit_val = head_limit
     offset_val = offset or 0
+    timeout_seconds = timeout if timeout is not None else 30
     
     # 上下文处理
     context_before = 0
@@ -354,46 +381,57 @@ def grep(
         }
         return json.dumps(error_result, ensure_ascii=False)
     
-    # 收集要搜索的文件
-    files_to_search = []
-    if os.path.isfile(search_path):
-        files_to_search = [search_path]
-    else:
-        # 目录：递归搜索所有文件
-        for root, dirs, filenames in os.walk(search_path):
-            # 排除常见目录
-            _skip_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv',
-                          '.tox', '.egg-info', 'dist', 'build', '.next',
-                          '.nuxt', 'target', '.gitlab', '.svn', '.hg',
-                          '.DS_Store'}
-            for d in list(dirs):
-                if d in _skip_dirs:
-                    dirs.remove(d)
+    try:
+        # 收集要搜索的文件
+        files_to_search = []
+        if os.path.isfile(search_path):
+            files_to_search = [search_path]
+            _check_timeout(start_time, timeout_seconds, 1)
+        else:
+            # 目录：递归搜索所有文件
+            for root, dirs, filenames in os.walk(search_path):
+                # 排除常见目录
+                _skip_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv',
+                              '.tox', '.egg-info', 'dist', 'build', '.next',
+                              '.nuxt', 'target', '.gitlab', '.svn', '.hg',
+                              '.DS_Store'}
+                for d in list(dirs):
+                    if d in _skip_dirs:
+                        dirs.remove(d)
+                
+                for filename in filenames:
+                    filepath = os.path.join(root, filename)
+                    # 应用glob筛选
+                    if _should_include_file(filepath, glob):
+                        files_to_search.append(filepath)
+                
+                # 每遍历一个目录检查超时
+                _check_timeout(start_time, timeout_seconds, len(files_to_search))
+        
+        # 在所有文件中搜索
+        all_matches: List[FileMatches] = []
+        for filepath in files_to_search:
+            # 每搜一个文件检查超时
+            _check_timeout(start_time, timeout_seconds, len(all_matches))
             
-            for filename in filenames:
-                filepath = os.path.join(root, filename)
-                # 应用glob筛选
-                if _should_include_file(filepath, glob):
-                    files_to_search.append(filepath)
+            options = GrepOptions(
+                pattern=pattern,
+                path=search_path,
+                glob=glob,
+                output_mode=output_mode,
+                context_before=context_before,
+                context_after=context_after,
+                show_line_numbers=show_line_numbers,
+                case_insensitive=case_insensitive,
+                head_limit=head_limit_val,
+                offset=offset_val
+            )
+            file_matches = _search_in_file(filepath, options)
+            if file_matches.match_count > 0:
+                all_matches.append(file_matches)
     
-    # 在所有文件中搜索
-    all_matches: List[FileMatches] = []
-    for filepath in files_to_search:
-        options = GrepOptions(
-            pattern=pattern,
-            path=search_path,
-            glob=glob,
-            output_mode=output_mode,
-            context_before=context_before,
-            context_after=context_after,
-            show_line_numbers=show_line_numbers,
-            case_insensitive=case_insensitive,
-            head_limit=head_limit_val,
-            offset=offset_val
-        )
-        file_matches = _search_in_file(filepath, options)
-        if file_matches.match_count > 0:
-            all_matches.append(file_matches)
+    except _TimeoutError as e:
+        timed_out = True
     
     # 根据输出模式处理结果
     if output_mode == "content":
@@ -466,6 +504,10 @@ def grep(
     
     # 添加执行时间（Claude Code兼容）
     result["durationMs"] = int((time.time() - start_time) * 1000)
+    
+    # 超时标志
+    if timed_out:
+        result["timed_out"] = True
     
     return json.dumps(result, ensure_ascii=False)
 
