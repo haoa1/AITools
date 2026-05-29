@@ -11,6 +11,7 @@ import json
 import time
 from typing import Dict, List, Any, Optional
 from base import function_ai, parameters_func, property_param
+from .input_helper import get_input
 
 # ============================================================================
 # PROPERTY DEFINITIONS
@@ -198,7 +199,7 @@ def _get_user_confirmation(default: str = "none") -> str:
     """
     try:
         # Read user input
-        response = input().strip().lower()
+        response = get_input("").strip().lower()
         
         # Handle empty response (use default)
         if not response:

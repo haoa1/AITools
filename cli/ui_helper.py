@@ -11,6 +11,8 @@ import sys
 import os
 from pathlib import Path
 
+from interaction.input_helper import get_input
+
 try:
     from rich.console import Console, ConsoleOptions, RenderResult
     from rich.table import Table
@@ -309,7 +311,7 @@ class AIToolsUI:
             if self.console and RICH_AVAILABLE:
                 action = Prompt.ask("[cyan]Action[/cyan]", choices=["n", "p", "q", ""], default="")
             else:
-                action = input(f"{self.colors.CYAN}Action (n/p/q): {self.colors.ENDC}").strip().lower()
+                action = get_input(f"{self.colors.CYAN}Action (n/p/q): {self.colors.ENDC}").strip().lower()
             
             # Process action
             if action == "n" and current_page < total_pages:
@@ -416,7 +418,7 @@ class AIToolsUI:
             return Confirm.ask(f"[cyan]{question}[/cyan]", default=default)
         else:
             suffix = " [Y/n]" if default else " [y/N]"
-            response = input(f"{self.colors.CYAN}{question}{suffix}{self.colors.ENDC} ").strip().lower()
+            response = get_input(f"{self.colors.CYAN}{question}{suffix}{self.colors.ENDC} ").strip().lower()
             if response == "":
                 return default
             return response in ['y', 'yes']
@@ -676,7 +678,7 @@ class AIToolsUI:
         if self.console and RICH_AVAILABLE:
             return Prompt.ask(f"[bold cyan]{prompt_text}[/bold cyan]")
         else:
-            return input(f"{self.colors.BOLD}{self.colors.CYAN}{prompt_text}{self.colors.ENDC} ")
+            return get_input(f"{self.colors.BOLD}{self.colors.CYAN}{prompt_text}{self.colors.ENDC} ")
 
 
 # Global UI instance

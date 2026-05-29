@@ -8,7 +8,7 @@ import os
 import argparse
 
 
-# Import UI helper for friendly display
+from interaction.input_helper import get_input
 from cli.ui_helper import get_ui
 
 # Initialize UI
@@ -797,7 +797,7 @@ Remember: Complete one atomic feature at a time, then use optimize_feature_conte
     # Store current cache type
     
     # Ask for initial user input
-    user_input = input("💭 What would you like me to help with? > ")
+    user_input = get_input("💭 What would you like me to help with? > ")
     
     while user_input.lower() not in ['quit', 'exit', 'q']:
         if user_input.lower() == 'clear':
@@ -844,7 +844,7 @@ Remember: Complete one atomic feature at a time, then use optimize_feature_conte
                 ui.print(f"\n🤖 Assistant: {response.choices[0].message.content}")
         
         # Get next user input
-        user_input = input("\n💭 Next request? > ")
+        user_input = get_input("\n💭 Next request? > ")
     
     ui.print_info("\n👋 Session ended. Goodbye!")
 

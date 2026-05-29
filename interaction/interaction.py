@@ -4,7 +4,7 @@ import os
 import sys
 import json
 import time
-import readline  # For better input handling on Unix-like systems
+from .input_helper import get_input
 from typing import List, Dict, Optional, Any
 import tempfile
 import subprocess
@@ -245,7 +245,7 @@ def display_message(message: str, title: str = None, level: str = "info",
         print(final_message)
         
         if wait:
-            input("\nPress Enter to continue...")
+            get_input("\nPress Enter to continue...")
         
         return f"Message displayed successfully (level: {level})"
         
@@ -290,7 +290,7 @@ def ask_user(prompt: str = "Enter value: ", default_value: str = None,
                 user_input = ""
         else:
             # No timeout
-            user_input = input().strip()
+            user_input = get_input("").strip()
         
         # Use default if no input
         if not user_input and default_value is not None:

@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 
 from base import function_ai, parameters_func, property_param
+from .input_helper import get_input
 
 # ===== 数据结构定义 =====
 
@@ -280,7 +281,7 @@ def _get_user_answer_interactive(question: Dict[str, Any]) -> str:
     
     while True:
         try:
-            user_input = input("Your choice: ").strip()
+            user_input = get_input("Your choice: ").strip()
             
             # 处理跳过
             config = _get_config()

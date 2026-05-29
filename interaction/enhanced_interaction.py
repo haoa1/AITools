@@ -9,8 +9,8 @@ import os
 import sys
 import json
 import time
-import readline
 from typing import List, Dict, Optional, Any, Union
+from .input_helper import get_input
 import tempfile
 import subprocess
 from datetime import datetime
@@ -356,7 +356,7 @@ def notify_user(
             print("\nThis notification requires acknowledgement.")
             
             if continue_condition == "user_input":
-                response = input("Press Enter to acknowledge, or type 'skip' to bypass: ").strip()
+                response = get_input("Press Enter to acknowledge, or type 'skip' to bypass: ").strip()
                 if response.lower() == 'skip':
                     return "Notification skipped by user"
                 else:
@@ -407,7 +407,7 @@ def _handle_ask_interaction(question, options, allow_multiple, require_confirmat
     else:
         prompt = f"\nEnter choice number (1-{len(options_list)}): "
     
-    selection_input = input(prompt).strip()
+    selection_input = get_input(prompt).strip()
     
     # Parse selection
     selected_indices = []
@@ -450,7 +450,7 @@ def _handle_ask_interaction(question, options, allow_multiple, require_confirmat
         else:
             confirm_prompt = f"{confirmation_text}? [yes/no]: "
         
-        confirm = input(confirm_prompt).strip().lower()
+        confirm = get_input(confirm_prompt).strip().lower()
         
         if confirm in ['yes', 'y']:
             result = f"Confirmed selection: {selection_text}"
@@ -487,7 +487,7 @@ def _handle_feedback_interaction(user_feedback_prompt, feedback_type, rating_sca
                 min_rating, max_rating = map(int, rating_scale.split('-'))
                 rating_prompt = f"Enter rating ({min_rating}-{max_rating}): "
                 while True:
-                    rating_input = input(rating_prompt).strip()
+                    rating_input = get_input(rating_prompt).strip()
                     try:
                         rating = int(rating_input)
                         if min_rating <= rating <= max_rating:
@@ -498,10 +498,10 @@ def _handle_feedback_interaction(user_feedback_prompt, feedback_type, rating_sca
                     except ValueError:
                         print("Please enter a valid number")
             except:
-                rating_input = input(f"Enter rating ({rating_scale}): ").strip()
+                rating_input = get_input(f"Enter rating ({rating_scale}): ").strip()
                 feedback_data["responses"]["rating"] = rating_input
         else:
-            rating_input = input(f"Enter rating ({rating_scale}): ").strip()
+            rating_input = get_input(f"Enter rating ({rating_scale}): ").strip()
             feedback_data["responses"]["rating"] = rating_input
     
     if feedback_type == "text" or feedback_type == "mixed":
@@ -509,7 +509,7 @@ def _handle_feedback_interaction(user_feedback_prompt, feedback_type, rating_sca
         lines = []
         while True:
             try:
-                line = input()
+                line = get_input()
                 if line == "" and lines and lines[-1] == "":
                     lines.pop()  # Remove last empty line
                     break
@@ -531,7 +531,7 @@ def _handle_feedback_interaction(user_feedback_prompt, feedback_type, rating_sca
         print("4. Poor")
         print("5. Very poor")
         
-        choice = input("Enter choice (1-5): ").strip()
+        choice = get_input("Enter choice (1-5): ").strip()
         choice_map = {
             "1": "Excellent",
             "2": "Good",
@@ -603,7 +603,7 @@ def _handle_confirmation_interaction(question, require_confirmation, blocking, c
     
     if continue_condition == "user_input":
         print("This operation requires your confirmation to proceed.")
-        response = input("Type 'yes' to confirm, 'no' to cancel, or press Enter to abort: ").strip().lower()
+        response = get_input("Type 'yes' to confirm, 'no' to cancel, or press Enter to abort: ").strip().lower()
         
         if response in ['yes', 'y']:
             return "User confirmed - proceeding with operation"
@@ -613,7 +613,7 @@ def _handle_confirmation_interaction(question, require_confirmation, blocking, c
             return "No confirmation received - operation aborted"
     
     elif continue_condition == "specific_answer":
-        answer = input("Please type 'I CONFIRM' to proceed: ").strip()
+        answer = get_input("Please type 'I CONFIRM' to proceed: ").strip()
         if answer == "I CONFIRM":
             return "Explicit confirmation received - proceeding"
         else:
@@ -635,7 +635,7 @@ def _handle_validation_interaction(question, expected_answer, validation_regex, 
         print(f"Expected format: {expected_answer}")
     
     for attempt in range(1, retry_count + 1):
-        user_input = input(f"\nAttempt {attempt}/{retry_count}: ").strip()
+        user_input = get_input(f"\nAttempt {attempt}/{retry_count}: ").strip()
         
         # Validate using regex if provided
         if validation_regex:
@@ -734,7 +734,7 @@ def _handle_wizard_interaction(interactive_mode, save_to_file):
             lines = []
             while True:
                 try:
-                    line = input()
+                    line = get_input()
                     if line == "" and lines and lines[-1] == "":
                         lines.pop()  # Remove last empty line
                         break
@@ -744,7 +744,7 @@ def _handle_wizard_interaction(interactive_mode, save_to_file):
             
             value = "\n".join(lines) if lines else default or ""
         else:
-            value = input(prompt).strip()
+            value = get_input(prompt).strip()
             if not value and default:
                 value = default
                 print(f"Using default: {default}")
@@ -755,7 +755,7 @@ def _handle_wizard_interaction(interactive_mode, save_to_file):
             if not re.match(validation_regex, value):
                 print(f"⚠️  Warning: Input does not match expected format")
                 # Ask for confirmation to continue
-                confirm = input("Continue anyway? [yes/no]: ").strip().lower()
+                confirm = get_input("Continue anyway? [yes/no]: ").strip().lower()
                 if confirm not in ['yes', 'y']:
                     return "Wizard cancelled by user"
         

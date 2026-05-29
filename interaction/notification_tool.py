@@ -12,6 +12,7 @@ import time
 import select
 from typing import Dict, List, Any, Optional
 from base import function_ai, parameters_func, property_param
+from .input_helper import get_input
 
 # ============================================================================
 # PROPERTY DEFINITIONS
@@ -162,6 +163,7 @@ def _get_config() -> NotificationConfig:
 # Helper Functions
 # ============================================================================
 
+
 def _format_notification_message(message: str, level: str) -> str:
     """Format notification message with appropriate prefix and formatting."""
     prefixes = {
@@ -196,7 +198,7 @@ def _display_notification(message: str, level: str) -> None:
 def _get_user_confirmation(prompt: str = "Press Enter to continue...") -> str:
     """Get user confirmation."""
     try:
-        return input(prompt).strip()
+        return get_input(prompt).strip()
     except EOFError:
         # Handle non-interactive environments (like pipes)
         return ""
@@ -350,7 +352,7 @@ def notify_user(
             elif continue_condition == "specific_answer":
                 # Wait for specific answer
                 if specific_answer:
-                    response = input(f"Type '{specific_answer}' to continue: ").strip()
+                    response = get_input(f"Type '{specific_answer}' to continue: ").strip()
                     result["user_response"] = response
                     result["confirmed"] = (response.lower() == specific_answer.lower())
                 else:
