@@ -1,33 +1,39 @@
 """
-sandbox.py — 通用交互式应用沙箱
+sandbox.py — 通用交互式应用沙箱（Windows + Unix 兼容）
 
 架构:
-  sandbox = 隔离环境（tmux workspace + PTY 子进程）
-  send()  → 跟内部 PTY 进程交互（任何应用）
-  exec()  → tmux bash 命令
+  sandbox = 隔离环境（tmux workspace + PTY/PIPE 子进程）
+  send()  → 跟内部进程交互（任何应用）
+  exec()  → tmux bash 命令（仅 Unix）
   start() → 异步部署，异步通知就绪
 
-异步流程（像 agent_tool）：
-  1. start(cmd="/tmp/some_app") → 立即返回 task_id
-  2. 后台启动进程，准备好后 publish 通知
-  3. send() → 写入 PTY，等 prompt，返回结果
-  4. send(async=True) → 立即返回 task_id，后台等 prompt，完成后通知
+Windows 兼容:
+  - Unix: 使用 PTY（伪终端）进行 I/O
+  - Windows: 使用 subprocess.PIPE + 线程读取 stdout
+  - tmux 仅在 Unix 可用，Windows 下跳过
+  - 工作路径使用 tempfile.gettempdir() 而非硬编码 /tmp/
 """
 
 import os
 import sys
-import pty
-import time
 import json
 import uuid
-import select
+import time
 import shutil
+import signal
 import threading
 import subprocess
-from typing import Optional, Dict, Any
+import tempfile
+from typing import Optional, Dict, Any, List
 
 # Tool definition framework
 from base import function_ai, parameters_func, property_param
+
+# ---------------------------------------------------------------------------
+# 平台检测
+# ---------------------------------------------------------------------------
+IS_WINDOWS = sys.platform == "win32"
+IS_UNIX = not IS_WINDOWS
 
 # ---------------------------------------------------------------------------
 # 事件系统集成（可选）
@@ -47,6 +53,231 @@ _sandboxes_lock = threading.Lock()
 
 SANDMARK = "###SANDMARK_END###"
 
+# Windows CREATE_NEW_PROCESS_GROUP flag
+if IS_WINDOWS:
+    import ctypes
+    CREATE_NEW_PROCESS_GROUP = 0x00000200
+
+
+# =============================================================================
+# I/O 后端 — Unix 使用 PTY，Windows 使用 PIPE
+# =============================================================================
+
+class _UnixIOBackend:
+    """Unix PTY-based I/O backend."""
+
+    def __init__(self):
+        import pty
+        self._pty = pty
+        self.master_fd: Optional[int] = None
+        self.slave_fd: Optional[int] = None
+
+    def open(self) -> tuple:
+        """Open PTY pair, returns (master_fd, slave_fd)."""
+        self.master_fd, self.slave_fd = self._pty.openpty()
+        return self.master_fd, self.slave_fd
+
+    def spawn(self, cmd_parts: List[str], cwd: str, env: dict,
+              stdin_fd: int, stdout_fd: int, stderr_fd: int) -> subprocess.Popen:
+        """Spawn subprocess connected to PTY slave."""
+        return subprocess.Popen(
+            cmd_parts,
+            stdin=stdin_fd, stdout=stdout_fd, stderr=stderr_fd,
+            cwd=cwd, env=env,
+            start_new_session=True,
+        )
+
+    def write(self, data: bytes):
+        """Write data to PTY master."""
+        if self.master_fd is not None:
+            os.write(self.master_fd, data)
+
+    def read(self, size: int = 4096) -> Optional[bytes]:
+        """Read from PTY master (non-blocking via select)."""
+        import select
+        if self.master_fd is None:
+            return None
+        ready, _, _ = select.select([self.master_fd], [], [], 0.0)
+        if ready:
+            try:
+                chunk = os.read(self.master_fd, size)
+                return chunk
+            except OSError:
+                return None
+        return b""
+
+    def close(self):
+        """Close PTY master fd."""
+        if self.master_fd is not None:
+            try:
+                os.close(self.master_fd)
+            except:
+                pass
+            self.master_fd = None
+        if self.slave_fd is not None:
+            try:
+                os.close(self.slave_fd)
+            except:
+                pass
+            self.slave_fd = None
+
+    @property
+    def has_tmux(self) -> bool:
+        return True
+
+    @property
+    def name(self) -> str:
+        return "pty"
+
+
+class _WindowsIOBackend:
+    """Windows I/O backend.
+
+    策略:
+      1. 如果 winpty 可用 → 用它包装命令（提供类似 PTY 的 TTY 仿真）
+      2. 否则 → 使用 PIPE 模式（非交互式命令友好，交互式应用受限）
+    """
+
+    def __init__(self):
+        self.proc: Optional[subprocess.Popen] = None
+        self._use_winpty = self._detect_winpty()
+
+    def _detect_winpty(self) -> bool:
+        """检测 winpty.exe 是否可用."""
+        try:
+            r = subprocess.run(["where", "winpty.exe"],
+                               capture_output=True, timeout=3, shell=True)
+            return r.returncode == 0
+        except:
+            return False
+
+    def open(self) -> tuple:
+        """Windows 不需要预打开 fd，返回 (None, None)."""
+        return None, None
+
+    def spawn(self, cmd_parts: List[str], cwd: str, env: dict,
+              stdin_fd, stdout_fd, stderr_fd) -> subprocess.Popen:
+        """Spawn subprocess.
+
+        如果 winpty 可用，用它包装命令以支持交互式 TTY 应用。
+        否则使用 PIPE 模式（非交互式命令可以正常工作）。
+        """
+        # 检查是否需要交互式 TTY
+        self._needs_tty = self._check_tty_needed(cmd_parts, env)
+
+        if self._use_winpty and self._needs_tty:
+            # winpty 模式：winpty.exe 提供 TTY 仿真
+            return self._spawn_winpty(cmd_parts, cwd, env)
+        else:
+            # PIPE 模式
+            return self._spawn_pipe(cmd_parts, cwd, env)
+
+    def _check_tty_needed(self, cmd_parts: List[str], env: dict) -> bool:
+        """判断命令是否需要 TTY（交互式）. """
+        cmd = " ".join(cmd_parts).lower()
+        # 需要 TTY 的场景
+        tty_keywords = ["python -i", "python -i", "ipython", "cmd.exe",
+                        "powershell", "pwsh", "node -i", "node --interactive",
+                        "garuda", "nano", "vim", "less"]
+        for kw in tty_keywords:
+            if kw in cmd:
+                return True
+        return False
+
+    def _spawn_winpty(self, cmd_parts: List[str], cwd: str, env: dict) -> subprocess.Popen:
+        """通过 winpty 启动（提供 TTY 仿真）. """
+        # winpty 支持 stdout/stderr via pipe
+        winpty_cmd = ["winpty.exe", "--"] + cmd_parts
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+        self.proc = subprocess.Popen(
+            winpty_cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=cwd,
+            env=env,
+            startupinfo=startupinfo,
+            bufsize=0,
+        )
+        return self.proc
+
+    def _spawn_pipe(self, cmd_parts: List[str], cwd: str, env: dict) -> subprocess.Popen:
+        """PIPE 模式启动（非交互式）. """
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+        self.proc = subprocess.Popen(
+            cmd_parts,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            cwd=cwd,
+            env=env,
+            startupinfo=startupinfo,
+            creationflags=CREATE_NEW_PROCESS_GROUP,
+            bufsize=0,
+        )
+        return self.proc
+
+    def write(self, data: bytes):
+        """Write data to subprocess stdin."""
+        if self.proc and self.proc.stdin:
+            try:
+                self.proc.stdin.write(data)
+                self.proc.stdin.flush()
+            except (BrokenPipeError, OSError):
+                pass
+
+    def read(self, size: int = 4096) -> Optional[bytes]:
+        """Read from subprocess stdout (non-blocking, cross-Python-version)."""
+        if self.proc is None or self.proc.stdout is None:
+            return None
+        try:
+            import msvcrt
+            fd = self.proc.stdout.fileno()
+            handle = msvcrt.get_osfhandle(fd)
+            avail = ctypes.c_ulong(0)
+            ok = ctypes.windll.kernel32.PeekNamedPipe(
+                handle, None, 0, None, ctypes.byref(avail), None
+            )
+            if ok and avail.value > 0:
+                # os.read works on raw fd, returns bytes, non-blocking after peek check
+                chunk = os.read(fd, min(avail.value, size))
+                return chunk
+        except Exception:
+            pass
+        return b""
+
+    def close(self):
+        """Close subprocess pipes."""
+        if self.proc:
+            try:
+                if self.proc.stdin:
+                    self.proc.stdin.close()
+            except:
+                pass
+            self.proc = None
+
+    @property
+    def has_tmux(self) -> bool:
+        return False
+
+    @property
+    def name(self) -> str:
+        if self._use_winpty:
+            return "winpty"
+        return "pipe"
+
+
+def _create_io_backend():
+    """Factory: 根据平台创建合适的 I/O 后端."""
+    if IS_WINDOWS:
+        return _WindowsIOBackend()
+    else:
+        return _UnixIOBackend()
+
 
 # =============================================================================
 # SandboxInstance — 一个沙箱管理一个隔离环境
@@ -56,15 +287,17 @@ class SandboxInstance:
         self.name = name
         self.workspace_dir = workspace_dir
 
-        # PTY 子进程
+        # I/O 后端（PTY Unix / PIPE Windows）
+        self.io = _create_io_backend()
+
+        # 子进程
         self.proc: Optional[subprocess.Popen] = None
-        self.pty_master_fd: Optional[int] = None
 
         # Reader 线程
         self.reader_thread: Optional[threading.Thread] = None
         self.reader_running = False
 
-        # Tmux workspace
+        # Tmux workspace（仅 Unix）
         self.tmux_session = f"garuda-sandbox-{name}"
 
         # 输出 buffer
@@ -142,14 +375,12 @@ class SandboxInstance:
     # ---- 清理 ----
     def cleanup(self, remove_dir: bool = True):
         self.reader_running = False
-        if self.pty_master_fd is not None:
-            try:
-                os.close(self.pty_master_fd)
-            except:
-                pass
-            self.pty_master_fd = None
+        if self.io:
+            self.io.close()
         if self.proc and self.proc.poll() is None:
             try:
+                if IS_WINDOWS:
+                    self.proc.send_signal(signal.CTRL_BREAK_EVENT)
                 self.proc.terminate()
                 self.proc.wait(timeout=5)
             except:
@@ -157,7 +388,7 @@ class SandboxInstance:
                     self.proc.kill()
                 except:
                     pass
-        if self.tmux_session:
+        if not IS_WINDOWS and self.tmux_session:
             try:
                 subprocess.run(["tmux", "kill-session", "-t", self.tmux_session],
                                capture_output=True, timeout=5)
@@ -170,26 +401,30 @@ class SandboxInstance:
 
 
 # =============================================================================
-# Reader 线程
+# Reader 线程（跨平台）
 # =============================================================================
 def _reader_worker(si: SandboxInstance):
     si.reader_running = True
-    mfd = si.pty_master_fd
-    if mfd is None:
-        si.reader_running = False
-        return
     try:
         while si.reader_running:
-            ready, _, _ = select.select([mfd], [], [], 0.3)
-            if not ready:
-                continue
-            try:
-                chunk = os.read(mfd, 4096)
-                if not chunk:
-                    break
-                si.append(chunk.decode("utf-8", errors="replace"))
-            except OSError:
+            chunk = si.io.read(4096)
+            if chunk is None:
                 break
+            if chunk:
+                si.append(chunk.decode("utf-8", errors="replace"))
+            else:
+                # 没有数据时休眠一下避免 busy wait
+                if si.proc and si.proc.poll() is not None:
+                    # 进程已退出，读完剩余数据
+                    if hasattr(si.io, 'proc') and si.io.proc and si.io.proc.stdout:
+                        try:
+                            remaining = si.io.proc.stdout.read()
+                            if remaining:
+                                si.append(remaining.decode("utf-8", errors="replace"))
+                        except:
+                            pass
+                    break
+                time.sleep(0.05)
     except Exception:
         import traceback
         traceback.print_exc()
@@ -211,26 +446,25 @@ def _start_sandbox(
     """
     启动一个交互式应用沙箱。
 
-    Args:
-        name: 沙箱名称
-        cmd: 要启动的交互式应用（如 "python3 test_app.py"）
-        timeout: 等待应用就绪的超时
-        prompt: 应用使用的 prompt 标记（用于等待就绪和提取响应）
-        async_mode: 是否异步启动（立即返回 task_id）
+    Windows 兼容：
+      - 使用 subprocess.PIPE 替代 PTY
+      - 使用 tempfile.gettempdir() 替代 /tmp/
+      - 跳过 tmux
     """
     with _sandboxes_lock:
         if name in _sandboxes:
             return {"error": f"沙箱 '{name}' 已存在"}
 
-    # 创建工作空间
-    ws_dir = f"/tmp/garuda-sandbox-{name}"
+    # 创建工作空间（跨平台路径）
+    tmp_dir = tempfile.gettempdir()
+    ws_dir = os.path.join(tmp_dir, f"garuda-sandbox-{name}")
     if os.path.exists(ws_dir):
         shutil.rmtree(ws_dir, ignore_errors=True)
     os.makedirs(os.path.join(ws_dir, "workspace"), exist_ok=True)
 
     si = SandboxInstance(name, ws_dir)
 
-    # 默认启动 garuda
+    # 默认启动命令
     if cmd is None:
         cmd = "garuda -i --no-sandbox"
 
@@ -247,67 +481,72 @@ def _start_sandbox(
             prompt = "❯"
         elif "python" in cmd and "-i" in cmd:
             prompt = ">>>"
+        elif "cmd" in cmd.lower() and IS_WINDOWS:
+            prompt = ">"
+        elif "powershell" in cmd.lower() and IS_WINDOWS:
+            prompt = "PS"
         else:
             prompt = "$"
 
-    # 打开 PTY
-    mfd, sfd = pty.openpty()
+    # 打开 I/O 后端并启动子进程
+    mfd, sfd = si.io.open()
 
     # 环境
     env = {
         **os.environ,
-        "TERM": "xterm-256color",
+        "TERM": "xterm-256color" if not IS_WINDOWS else "xterm",
         "PYTHONUNBUFFERED": "1",
         "GARUDA_SANDBOX_CHILD": "1",
     }
 
     try:
-        proc = subprocess.Popen(
+        proc = si.io.spawn(
             [cmd_prog] + cmd_args,
-            stdin=sfd, stdout=sfd, stderr=sfd,
             cwd=os.path.join(ws_dir, "workspace"),
             env=env,
-            start_new_session=True,
+            stdin_fd=sfd, stdout_fd=sfd, stderr_fd=sfd,
         )
     except FileNotFoundError:
-        os.close(mfd)
-        os.close(sfd)
+        si.io.close()
         shutil.rmtree(ws_dir, ignore_errors=True)
         return {"error": f"命令未找到: '{cmd_prog}'"}
     except Exception as e:
-        os.close(mfd)
-        os.close(sfd)
+        si.io.close()
         shutil.rmtree(ws_dir, ignore_errors=True)
         return {"error": f"启动失败: {e}"}
 
-    os.close(sfd)
-    si.proc = proc
-    si.pty_master_fd = mfd
+    # 关闭 slave fd（Unix 下），Windows 下 sfd 是 None
+    if sfd is not None and not IS_WINDOWS:
+        os.close(sfd)
 
-    # 启动 reader
+    si.proc = proc
+
+    # 启动 reader 线程
     reader = threading.Thread(target=_reader_worker, args=(si,), daemon=True)
     reader.start()
     si.reader_thread = reader
 
-    # 创建 tmux workspace
-    try:
-        subprocess.run(
-            ["tmux", "new-session", "-d", "-s", si.tmux_session, "-n", "workspace"],
-            capture_output=True, timeout=5, check=True
-        )
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{si.tmux_session}:0",
-             f"cd {os.path.join(ws_dir, 'workspace')} && clear", "Enter"],
-            capture_output=True, timeout=3
-        )
-    except:
-        pass
+    # 创建 tmux workspace（仅 Unix）
+    if not IS_WINDOWS:
+        try:
+            subprocess.run(
+                ["tmux", "new-session", "-d", "-s", si.tmux_session, "-n", "workspace"],
+                capture_output=True, timeout=5, check=True
+            )
+            subprocess.run(
+                ["tmux", "send-keys", "-t", f"{si.tmux_session}:0",
+                 f"cd {os.path.join(ws_dir, 'workspace')} && clear", "Enter"],
+                capture_output=True, timeout=3
+            )
+        except:
+            pass
 
     _sandboxes[name] = si
 
     if async_mode:
         # 异步启动
         task_id = f"sandbox_start_{uuid.uuid4().hex[:6]}"
+
         def _start_watcher():
             try:
                 si.wait_for_prompt(prompt=prompt, timeout=timeout)
@@ -351,6 +590,7 @@ def _start_sandbox(
                         "tool_name": "sandbox",
                         "error_message": str(e),
                     })
+
         w = threading.Thread(target=_start_watcher, daemon=True)
         w.start()
         return {
@@ -367,8 +607,7 @@ def _start_sandbox(
     except TimeoutError as e:
         proc.terminate()
         proc.wait(3)
-        os.close(mfd)
-        si.pty_master_fd = None
+        si.io.close()
         si.reader_running = False
         shutil.rmtree(ws_dir, ignore_errors=True)
         _sandboxes.pop(name, None)
@@ -394,8 +633,7 @@ def _send_to_sandbox(
     """
     向沙箱内部应用发送消息并等待响应。
 
-    sync 模式：阻塞等 prompt 返回
-    async 模式：立即返回 task_id，完成后通知
+    Windows 兼容：使用 PIPE stdin 写入替代 PTY 写入。
     """
     with _sandboxes_lock:
         si = _sandboxes.get(name)
@@ -403,22 +641,19 @@ def _send_to_sandbox(
         return {"error": f"沙箱 '{name}' 不存在"}
     if si.proc is None or si.proc.poll() is not None:
         return {"error": f"沙箱进程已退出 (PID={si.proc.pid if si.proc else 'N/A'})"}
-    if si.pty_master_fd is None:
-        return {"error": "PTY 不可用"}
-
-    mfd = si.pty_master_fd
 
     # 清除残留
     si.clear_buffer()
 
-    # 写入
+    # 写入（跨平台：write to PTY master or PIPE stdin）
     try:
-        os.write(mfd, (text + "\n").encode("utf-8"))
+        si.io.write((text + "\n").encode("utf-8"))
     except OSError as e:
-        return {"error": f"PTY 写入失败: {e}"}
+        return {"error": f"I/O 写入失败: {e}"}
 
     if async_mode:
         task_id = f"sandbox_send_{uuid.uuid4().hex[:6]}"
+
         def _send_watcher():
             try:
                 response = si.wait_for_prompt(prompt=prompt, timeout=timeout)
@@ -457,6 +692,7 @@ def _send_to_sandbox(
                         "tool_name": "sandbox",
                         "error_message": str(e),
                     })
+
         w = threading.Thread(target=_send_watcher, daemon=True)
         w.start()
         return {
@@ -481,7 +717,31 @@ def _send_to_sandbox(
 
 
 def _exec_in_workspace(name: str, cmd: str, timeout: float = 30.0) -> Dict:
-    """在 tmux workspace 执行 bash 命令（不变）"""
+    """在 tmux workspace 执行 bash 命令（仅 Unix）"""
+    if IS_WINDOWS:
+        # Windows 下不支持 tmux，改用 subprocess
+        with _sandboxes_lock:
+            si = _sandboxes.get(name)
+        if not si:
+            return {"error": f"沙箱 '{name}' 不存在"}
+        try:
+            r = subprocess.run(
+                cmd, shell=True,
+                capture_output=True, timeout=timeout,
+                cwd=si.workspace_dir,
+            )
+            return {
+                "success": True,
+                "output": (r.stdout + r.stderr).decode("utf-8", errors="replace")[:2000],
+                "name": name,
+                "platform": "windows",
+            }
+        except subprocess.TimeoutExpired:
+            return {"error": f"命令执行超时 ({timeout}s)"}
+        except Exception as e:
+            return {"error": str(e)}
+
+    # Unix tmux 版本
     with _sandboxes_lock:
         si = _sandboxes.get(name)
     if not si:
@@ -541,7 +801,7 @@ def _exec_in_workspace(name: str, cmd: str, timeout: float = 30.0) -> Dict:
 
 
 def _get_buffer(name: str) -> Dict:
-    """获取 PTY 缓冲区的完整输出（日志）"""
+    """获取 I/O 缓冲区的完整输出（日志）"""
     with _sandboxes_lock:
         si = _sandboxes.get(name)
     if not si:
@@ -553,7 +813,11 @@ def _get_buffer(name: str) -> Dict:
 
 
 def _capture_pane(name: str, window: int = 0) -> Dict:
-    """捕获 tmux pane 输出（不变）"""
+    """捕获 tmux pane 输出（仅 Unix）"""
+    if IS_WINDOWS:
+        # Windows 下 fallback 到 get_buffer
+        return _get_buffer(name)
+
     with _sandboxes_lock:
         si = _sandboxes.get(name)
     if not si:
@@ -577,22 +841,24 @@ def _list_sandboxes() -> Dict:
         for name, si in _sandboxes.items():
             alive = si.proc is not None and si.proc.poll() is None
             tmux_ok = False
-            try:
-                r = subprocess.run(["tmux", "has-session", "-t", si.tmux_session],
-                                   capture_output=True, timeout=2)
-                tmux_ok = r.returncode == 0
-            except:
-                pass
+            if not IS_WINDOWS:
+                try:
+                    r = subprocess.run(["tmux", "has-session", "-t", si.tmux_session],
+                                       capture_output=True, timeout=2)
+                    tmux_ok = r.returncode == 0
+                except:
+                    pass
             result.append({
                 "name": name,
                 "pid": si.proc.pid if si.proc else None,
                 "alive": alive,
-                "cmd": si.proc.args if si.proc else None,
+                "cmd": getattr(si.proc, 'args', None) if si.proc else None,
                 "tmux": tmux_ok,
                 "reader": si.reader_running,
                 "workspace": si.workspace_dir,
                 "ready": si._ready.is_set(),
                 "async_tasks": list(si._async_tasks.keys()),
+                "backend": si.io.name if si.io else "unknown",
             })
         return {"success": True, "sandboxes": result}
 
@@ -605,7 +871,6 @@ def _check_task(name: str, task_id: str) -> Dict:
         return {"error": f"沙箱 '{name}' 不存在"}
     result = si.get_async_result(task_id)
     if result is None:
-        # 如果在 _async_tasks 中还没完成，说明还在进行中
         with si._async_lock:
             if task_id in si._async_tasks:
                 result = {"status": "completed", **si._async_tasks[task_id]}
@@ -615,7 +880,7 @@ def _check_task(name: str, task_id: str) -> Dict:
 
 
 def _stop_sandbox(name: str, cleanup: bool = True) -> Dict:
-    """停止沙箱（不变）"""
+    """停止沙箱"""
     with _sandboxes_lock:
         si = _sandboxes.pop(name, None)
     if not si:
@@ -646,8 +911,9 @@ def sandbox_handler(sub_cmd: str, name: str = "", **kwargs) -> str:
         prompt: 应用的 prompt 标记
         async: 异步模式（默认 false）
         
-      exec - tmux workspace bash
-      capture - 捕获 tmux pane
+      exec - 在 workspace 执行命令（Unix 用 tmux，Windows 用 subprocess）
+      capture - 捕获输出
+      buffer - 显示 I/O 缓冲区日志
       list - 列出沙箱
       check - 查询异步任务
       stop - 停止
@@ -722,7 +988,7 @@ def sandbox_handler(sub_cmd: str, name: str = "", **kwargs) -> str:
 
 _prop_sub_cmd = property_param(
     name="sub_cmd",
-    description="Sub-command: 'start' (create sandbox with app), 'send' (send to app via PTY), 'exec' (bash in workspace), 'capture' (capture pane), 'buffer' (show PTY logs), 'list' (list all), 'check' (check async task), 'stop' (destroy)",
+    description="Sub-command: 'start' (create sandbox with app), 'send' (send to app via I/O), 'exec' (run command), 'capture' (capture output), 'buffer' (show logs), 'list' (list all), 'check' (check async task), 'stop' (destroy). Windows compatible.",
     t="string",
     required=True
 )
@@ -743,7 +1009,7 @@ _prop_input = property_param(
 
 _prop_cmd = property_param(
     name="cmd",
-    description="Startup command when sub_cmd='start' (default: 'garuda -i --no-sandbox'), or bash command when sub_cmd='exec'",
+    description="Startup command when sub_cmd='start' (default: 'garuda -i --no-sandbox'), or shell command when sub_cmd='exec'",
     t="string",
     required=False
 )
@@ -764,7 +1030,7 @@ _prop_timeout = property_param(
 
 _prop_prompt = property_param(
     name="prompt",
-    description="Application prompt marker for response detection (e.g. 'ECHO>', 'Garuda >', '$')",
+    description="Application prompt marker for response detection (e.g. 'ECHO>', 'Garuda >', '$', '>', 'PS')",
     t="string",
     required=False
 )
@@ -778,7 +1044,7 @@ _prop_task_id = property_param(
 
 _prop_window = property_param(
     name="window",
-    description="Tmux window index to capture when sub_cmd='capture' (default: 0)",
+    description="Tmux window index to capture when sub_cmd='capture' (default: 0, Unix only)",
     t="integer",
     required=False
 )
@@ -795,22 +1061,22 @@ _sandbox_function = function_ai(
     description="""Sandbox tool for running and interacting with isolated applications.
 
     Architecture:
-      - start <cmd>  → Launches ANY interactive app in a PTY (not just Garuda)
-      - send <input>  → Writes to the app's PTY (async by default), notifies on completion
-      - exec <cmd>    → Runs bash in tmux workspace (independent channel)
-      - buffer        → Shows PTY accumulated output (logs)
+      - start <cmd>  → Launches ANY interactive app in a sandbox
+      - send <input>  → Writes to the app's I/O (async by default), notifies on completion
+      - exec <cmd>    → Runs command in workspace
+      - buffer        → Shows accumulated output (logs)
       
-    Dual-mode: send (PTY interaction with app) + exec (bash via tmux).
+    Cross-platform: works on Windows (PIPE) and Unix (PTY).
     Async by default: send returns immediately with task_id, notifies on completion.
-    Buffer: buffer command shows full PTY output history (last 10K chars).
+    Buffer: buffer command shows full output history (last 10K chars).
     Check mode: check(task_id) queries async task status.
     
     Sub-commands:
     - 'start': Create sandbox with given cmd (default: garuda). Set prompt for custom apps.
-    - 'send': Send message to sandboxed app via PTY (async by default).
-    - 'exec': Run bash command in workspace tmux window.
-    - 'capture': Capture output from a tmux pane.
-    - 'buffer': Show PTY accumulated output (logs).
+    - 'send': Send message to sandboxed app (async by default).
+    - 'exec': Run command in workspace (Unix: tmux, Windows: subprocess).
+    - 'capture': Capture output (Unix: tmux pane, Windows: buffer fallback).
+    - 'buffer': Show accumulated output (logs).
     - 'list': List all active sandboxes.
     - 'check': Check status of an async task (from send/start async mode).
     - 'stop': Stop and optionally clean up a sandbox.""",
