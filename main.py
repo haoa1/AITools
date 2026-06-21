@@ -20,17 +20,14 @@ def load_manual_imports():
     ui.print_warning("⚠️  Falling back to manual imports...")
     
     # Manual imports (original code)
-    from file.read import tools as read_tools
-    from file.write import tools as write_tools
-    from file.delete import tools as delete_tools
-    from file.replace import tools as replace_tools
-    from file.read import TOOL_CALL_MAP as read_tool_map
-    from file.write import TOOL_CALL_MAP as write_tool_map
-    from file.delete import TOOL_CALL_MAP as delete_tool_map
-    from file.replace import TOOL_CALL_MAP as replace_tool_map
+    from file.file_read_tool import tools as read_tools, TOOL_CALL_MAP as read_tool_map
+    from file.file_read_tool import tools as write_tools, TOOL_CALL_MAP as write_tool_map
+    from file.file_read_tool import tools as edit_tools, TOOL_CALL_MAP as edit_tool_map
+    from file.file_read_tool import tools as grep_tools, TOOL_CALL_MAP as grep_tool_map
+    from file.file_read_tool import tools as glob_tools, TOOL_CALL_MAP as glob_tool_map
 
-    from git.git import tools as git_tools
-    from git.git import TOOL_CALL_MAP as git_tool_map
+    # from git.git import tools as git_tools
+    # from git.git import TOOL_CALL_MAP as git_tool_map
 
     from shell.bash import tools as bash_tools
     from shell.bash import TOOL_CALL_MAP as bash_tool_map
@@ -90,8 +87,8 @@ def load_manual_imports():
     #          network_tools + enhanced_interaction_tools +
     #          database_tools + web_search_tools + stock_tools + summary_tools + project_context_tools + diagram_tools + architect_tools + pdf_tools + markdown_tools)
     
-    tools = (read_tools + write_tools + delete_tools + replace_tools + 
-             git_tools + bash_tools + workspace_tools + stock_tools +
+    tools = (read_tools + write_tools + edit_tools + grep_tools + 
+             glob_tools + bash_tools + workspace_tools + stock_tools +
              network_tools +
              summary_tools + project_context_tools + architect_tools)
 
@@ -99,9 +96,10 @@ def load_manual_imports():
     tool_call_maps = {}
     tool_call_maps.update(read_tool_map)
     tool_call_maps.update(write_tool_map)
-    tool_call_maps.update(delete_tool_map)
-    tool_call_maps.update(replace_tool_map)
-    tool_call_maps.update(git_tool_map)
+    tool_call_maps.update(edit_tool_map)
+    tool_call_maps.update(grep_tool_map)
+    tool_call_maps.update(glob_tool_map)
+    # tool_call_maps.update(git_tool_map)
     tool_call_maps.update(bash_tool_map)
     tool_call_maps.update(workspace_tool_map)
     # tool_call_maps.update(compress_tool_map)
