@@ -252,6 +252,40 @@ def display_message(message: str, title: str = None, level: str = "info",
     except Exception as e:
         return f"Error displaying message: {str(e)}"
 
+def _read_with_timeout(timeout: int) -> str:
+    """Read a line from stdin with timeout.
+    
+    Cross-platform: on Windows, select.select([sys.stdin]) only works with
+    sockets, not pipes/console, so we fall back to a threading-based approach.
+    """
+    import threading
+    import sys
+
+    result = ['']
+    done = threading.Event()
+
+    def reader():
+        try:
+            line = sys.stdin.readline()
+            result[0] = line
+        except Exception:
+            result[0] = ''
+        finally:
+            done.set()
+
+    t = threading.Thread(target=reader, daemon=True)
+    t.start()
+    finished = done.wait(timeout)
+
+    if finished:
+        return result[0].strip()
+    else:
+        # Timeout - reader thread stays alive but is daemon so it'll die
+        # when the process exits
+        print(f"\nTimeout after {timeout} seconds, using default value.")
+        return ''
+
+
 def ask_user(prompt: str = "Enter value: ", default_value: str = None, 
                    timeout: int = 0) -> str:
     '''
@@ -278,16 +312,7 @@ def ask_user(prompt: str = "Enter value: ", default_value: str = None,
         
         # Handle timeout
         if timeout > 0:
-            import select
-            import sys
-            
-            # Wait for input with timeout
-            rlist, _, _ = select.select([sys.stdin], [], [], timeout)
-            if rlist:
-                user_input = sys.stdin.readline().strip()
-            else:
-                print(f"\nTimeout after {timeout} seconds, using default value.")
-                user_input = ""
+            user_input = _read_with_timeout(timeout)
         else:
             # No timeout
             user_input = get_input("").strip()

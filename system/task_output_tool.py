@@ -11,6 +11,7 @@ import sys
 import json
 import time
 import uuid
+import tempfile
 from typing import Dict, List, Any, Optional
 from base import function_ai, parameters_func, property_param
 
@@ -73,7 +74,7 @@ class TaskOutputConfig:
         self.max_timeout = 600000
         
         # 任务输出目录（用于模拟任务输出）
-        self.task_output_dir = "/tmp/aitools_tasks"
+        self.task_output_dir = os.path.join(tempfile.gettempdir(), "aitools_tasks")
         
         # 是否启用模拟模式（当没有真实任务管理器时）
         self.simulation_mode = True
@@ -105,7 +106,7 @@ class TaskOutputConfig:
         
         config.task_output_dir = os.environ.get(
             "TASK_OUTPUT_DIR",
-            "/tmp/aitools_tasks"
+            os.path.join(tempfile.gettempdir(), "aitools_tasks")
         )
         
         simulation = os.environ.get("TASK_OUTPUT_SIMULATION_MODE", "true").lower()

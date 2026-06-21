@@ -9,7 +9,6 @@ import os
 import sys
 import json
 import time
-import select
 from typing import Dict, List, Any, Optional
 from base import function_ai, parameters_func, property_param
 from .input_helper import get_input
@@ -340,8 +339,23 @@ def notify_user(
                 # Wait with timeout
                 print(f"Waiting up to {timeout} seconds (press Enter to continue)...", file=sys.stderr)
                 
-                # Use select to wait for input with timeout
-                if select.select([sys.stdin], [], [], timeout)[0]:
+                # Cross-platform: select.select([sys.stdin]) only works with sockets on Windows.
+                # Use threading-based timeout instead.
+                import threading
+                _read_done = threading.Event()
+                _read_result = [None]
+                
+                def _reader():
+                    try:
+                        _read_result[0] = sys.stdin.readline()
+                    except Exception:
+                        _read_result[0] = None
+                    finally:
+                        _read_done.set()
+                
+                _t = threading.Thread(target=_reader, daemon=True)
+                _t.start()
+                if _read_done.wait(timeout):
                     response = _get_user_confirmation()
                     result["user_response"] = response
                     result["confirmed"] = True

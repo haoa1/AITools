@@ -297,10 +297,11 @@ if __name__ == "__main__":
     
     # Test 4: Check Claude Code compatibility
     print("\n4. Claude Code compatibility check:")
+    import tempfile
     test_response = {
         "action": "keep",
-        "originalCwd": "/tmp/original",
-        "worktreePath": "/tmp/worktree",
+        "originalCwd": os.path.join(tempfile.gettempdir(), "original"),
+        "worktreePath": os.path.join(tempfile.gettempdir(), "worktree"),
         "worktreeBranch": "main",
         "message": "Test message"
     }

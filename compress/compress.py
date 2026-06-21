@@ -302,14 +302,18 @@ def archive_files(files: list, destination_path: str, compression_type: str = "z
         archive_name = os.path.basename(destination_path)
         
         if compression_type == "zip" or archive_name.endswith('.zip'):
-            # Create zip file
-            compression = zipfile.ZIP_DEFLATED
+            # Create zip file - use ZIP_DEFLATED if zlib available, else ZIP_STORED
+            try:
+                compression = zipfile.ZIP_DEFLATED
+            except Exception:
+                compression = zipfile.ZIP_STORED
             try:
                 with zipfile.ZipFile(destination_path, 'w', compression) as zipf:
                     for file_path in valid_files:
                         if os.path.isfile(file_path):
-                            # Add file
+                            # Add file - use forward slashes for cross-platform compatibility
                             arcname = os.path.basename(file_path) if not include_base_dir else file_path
+                            arcname = arcname.replace('\\', '/')
                             zipf.write(file_path, arcname)
                         elif os.path.isdir(file_path):
                             # Add directory
@@ -318,7 +322,9 @@ def archive_files(files: list, destination_path: str, compression_type: str = "z
                                     full_path = os.path.join(root, filename)
                                     if not recursive and root != file_path:
                                         continue
-                                    arcname = os.path.relpath(full_path, file_path if include_base_dir else '.')
+                                    # Use relative path with forward slashes for zip
+                                    rel_path = os.path.relpath(full_path, start=os.path.dirname(file_path) if include_base_dir else '.')
+                                    arcname = rel_path.replace('\\', '/')
                                     zipf.write(full_path, arcname)
             
                 # Set password if provided
