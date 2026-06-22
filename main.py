@@ -21,10 +21,10 @@ def load_manual_imports():
     
     # Manual imports (original code)
     from file.file_read_tool import tools as read_tools, TOOL_CALL_MAP as read_tool_map
-    from file.file_read_tool import tools as write_tools, TOOL_CALL_MAP as write_tool_map
-    from file.file_read_tool import tools as edit_tools, TOOL_CALL_MAP as edit_tool_map
-    from file.file_read_tool import tools as grep_tools, TOOL_CALL_MAP as grep_tool_map
-    from file.file_read_tool import tools as glob_tools, TOOL_CALL_MAP as glob_tool_map
+    from file.file_write_tool import tools as write_tools, TOOL_CALL_MAP as write_tool_map
+    from file.file_edit_tool import tools as edit_tools, TOOL_CALL_MAP as edit_tool_map
+    from file.grep_tool import tools as grep_tools, TOOL_CALL_MAP as grep_tool_map
+    from file.glob_tool import tools as glob_tools, TOOL_CALL_MAP as glob_tool_map
 
     # from git.git import tools as git_tools
     # from git.git import TOOL_CALL_MAP as git_tool_map

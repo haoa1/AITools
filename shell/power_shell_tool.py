@@ -98,6 +98,13 @@ __POWERSHELL_TOOL_FUNCTION__ = function_ai(
 )
 
 # ============================================================================
+# CACHE
+# ============================================================================
+
+# Cache for PowerShell availability check to avoid subprocess overhead on every call
+_POWERSHELL_AVAILABLE_CACHE = None  # Tuple of (bool, version_info_or_None, error_or_None)
+
+# ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
 
@@ -133,10 +140,16 @@ def _is_powershell_available() -> Tuple[bool, Optional[str], Optional[str]]:
     """
     Check if PowerShell is available and return version info.
     Returns (is_available, version_info, error_message)
+    Results are cached for the lifetime of the process.
     """
+    global _POWERSHELL_AVAILABLE_CACHE
+    if _POWERSHELL_AVAILABLE_CACHE is not None:
+        return _POWERSHELL_AVAILABLE_CACHE
+    
     ps_path = _get_powershell_path()
     if not ps_path:
-        return False, None, "PowerShell not found. Install PowerShell Core (pwsh) or Windows PowerShell."
+        _POWERSHELL_AVAILABLE_CACHE = (False, None, "PowerShell not found. Install PowerShell Core (pwsh) or Windows PowerShell.")
+        return _POWERSHELL_AVAILABLE_CACHE
     
     try:
         # Try to get version info
@@ -154,10 +167,12 @@ def _is_powershell_available() -> Tuple[bool, Optional[str], Optional[str]]:
         else:
             version_info = f"PowerShell at {ps_path}"
         
-        return True, version_info, None
+        _POWERSHELL_AVAILABLE_CACHE = (True, version_info, None)
+        return _POWERSHELL_AVAILABLE_CACHE
         
     except Exception as e:
-        return False, None, f"PowerShell check failed: {e}"
+        _POWERSHELL_AVAILABLE_CACHE = (False, None, f"PowerShell check failed: {e}")
+        return _POWERSHELL_AVAILABLE_CACHE
 
 def _build_powershell_command(
     command: str, 
@@ -178,17 +193,14 @@ def _build_powershell_command(
         if execution_policy.lower() in ['bypass', 'unrestricted', 'remotesigned', 'allsigned', 'restricted']:
             args.extend(['-ExecutionPolicy', execution_policy])
     
-    # Add encoding if specified
+    # Add encoding if specified (output format only, not command encoding)
     if encoding:
         if encoding.lower() in ['utf8', 'utf16', 'ascii', 'unicode', 'bigendianunicode']:
-            args.extend(['-OutputFormat', 'Text', '-EncodedCommand'])
-            # PowerShell expects Base64 encoded command when using -EncodedCommand
-            import base64
-            encoded_bytes = base64.b64encode(command.encode('utf-16-le'))
-            args.append(encoded_bytes.decode('ascii'))
-            return args
+            # -OutputFormat Text is already the default, just use -Command normally
+            # Encoding is handled by Python decode() in the main function
+            pass
     
-    # Default: use -Command parameter
+    # Use -Command parameter (always, not -EncodedCommand)
     args.extend(['-Command', command])
     return args
 
@@ -279,12 +291,6 @@ def _is_no_output_expected(command: str) -> bool:
         '> $null',
         '>> $null',
     ]
-    
-    for pattern in no_output_patterns:
-        if pattern in cmd_lower:
-            return True
-    
-    return False
     
     for pattern in no_output_patterns:
         if pattern in cmd_lower:
