@@ -9,6 +9,7 @@ import os
 import json
 import subprocess
 import shutil
+import signal
 import time
 import platform
 from typing import Optional, Dict, Any, Tuple
@@ -407,31 +408,30 @@ def power_shell(
             if not encoding:
                 env['PYTHONIOENCODING'] = 'utf-8'
         
-        # Prepare subprocess arguments
-        kwargs = {
-            'args': ps_args,
-            'cwd': cwd,
-            'env': env,
-            'stdout': subprocess.PIPE,
-            'stderr': subprocess.PIPE,
-            'text': False,  # Get bytes for image detection
-        }
-        
-        if timeout_seconds:
-            kwargs['timeout'] = timeout_seconds
-        
         # Track start time
         start_time = time.time()
         interrupted = False
         
         try:
-            # Execute command
-            process = subprocess.run(**kwargs)
-            execution_time = time.time() - start_time
+            # Start the process (use Popen for process tree cleanup on timeout)
+            proc = subprocess.Popen(
+                args=ps_args,
+                cwd=cwd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,  # Get bytes for image detection
+                # On Unix, create new process group so children can be killed
+                start_new_session=(platform.system() != 'Windows'),
+            )
             
-            # Get outputs as bytes
-            stdout_bytes = process.stdout if process.stdout else b''
-            stderr_bytes = process.stderr if process.stderr else b''
+            # Wait for completion with optional timeout
+            if timeout_seconds:
+                stdout_bytes, stderr_bytes = proc.communicate(timeout=timeout_seconds)
+            else:
+                stdout_bytes, stderr_bytes = proc.communicate()
+            
+            execution_time = time.time() - start_time
             
             # Check if output appears to be image data
             is_image = _is_image_output(stdout_bytes)
@@ -447,7 +447,7 @@ def power_shell(
                 stderr = stderr_bytes.decode('latin-1', errors='replace')
             
             # Get return code interpretation
-            return_code_interpretation = _get_return_code_interpretation(process.returncode, command)
+            return_code_interpretation = _get_return_code_interpretation(proc.returncode, command)
             
             # Check if command is expected to produce no output
             no_output_expected = _is_no_output_expected(command)
@@ -472,8 +472,8 @@ def power_shell(
             
             # Add metadata
             response["_metadata"] = {
-                "success": process.returncode == 0,
-                "returnCode": process.returncode,
+                "success": proc.returncode == 0,
+                "returnCode": proc.returncode,
                 "executionTime": execution_time,
                 "command": command,
                 "description": description,
@@ -492,6 +492,35 @@ def power_shell(
         except subprocess.TimeoutExpired:
             interrupted = True
             execution_time = time.time() - start_time
+            
+            # Kill the entire process tree, not just the direct process
+            # PowerShell launches child processes that subprocess.kill() alone misses
+            try:
+                proc.kill()  # Kill direct process (TerminateProcess on Windows)
+                if platform.system() == 'Windows':
+                    # Kill all child processes via taskkill /T
+                    subprocess.run(
+                        ['taskkill', '/F', '/T', '/PID', str(proc.pid)],
+                        capture_output=True,
+                        timeout=10,
+                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+                    )
+                else:
+                    # Kill the Unix process group (all children)
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass  # Process already dead
+                # Wait for process to fully terminate
+                proc.wait(timeout=5)
+            except Exception:
+                pass  # Best-effort cleanup
+            finally:
+                # Ensure process is reaped
+                try:
+                    proc.wait(timeout=1)
+                except Exception:
+                    pass
             
             return json.dumps({
                 "stdout": "",
